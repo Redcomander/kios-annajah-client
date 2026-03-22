@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { EyeIcon, DocumentTextIcon, XMarkIcon, PrinterIcon } from '@heroicons/react/24/solid'
+import { EyeIcon, DocumentTextIcon, XMarkIcon, PrinterIcon, TrashIcon } from '@heroicons/react/24/solid'
 import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
+import { buildApiUrl } from '../config/api'
+import { printReceipt } from '../utils/receipt'
 
 interface TransactionItem {
   id: number;
@@ -15,24 +17,62 @@ interface Transaction {
   total_amount: number;
   payment_method: string;
   created_at: string;
+    is_voided?: boolean;
+    voided_at?: string;
+    void_reason?: string;
   items: TransactionItem[];
 }
 
 export const TransactionList = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
-  const { token } = useAuth()
+    const { token, user } = useAuth()
+
+    const fetchTransactions = () => {
+        if (!token) return
+
+        fetch(buildApiUrl('/api/transactions'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+            .then(res => res.json())
+            .then(data => Array.isArray(data) ? setTransactions(data) : setTransactions([]))
+            .catch(err => console.error(err))
+    }
 
   useEffect(() => {
-    if (!token) return
-
-    fetch('http://localhost:3000/api/transactions', {
-        headers: { 'Authorization': `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => Array.isArray(data) ? setTransactions(data) : setTransactions([]))
-      .catch(err => console.error(err))
+        fetchTransactions()
   }, [token])
+
+    const handleDeleteTransaction = async (id: number) => {
+        if (user?.role !== 'admin') return
+        const reason = prompt(`Alasan void/refund transaksi #${id} (opsional):`, 'Void by admin')
+        if (reason === null) return
+        if (!confirm(`Void/refund transaksi #${id}? Stok barang akan dikembalikan.`)) return
+
+        try {
+            const res = await fetch(buildApiUrl(`/api/transactions/${id}`), {
+                method: 'DELETE',
+                headers: token ? {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                } : undefined,
+                body: JSON.stringify({ reason }),
+            })
+
+            if (res.ok) {
+                if (selectedTransaction?.id === id) {
+                    setSelectedTransaction(null)
+                }
+                fetchTransactions()
+            } else {
+                const err = await res.json().catch(() => null)
+                alert(err?.error || 'Gagal melakukan void/refund transaksi.')
+            }
+        } catch (error) {
+            console.error(error)
+            alert('Gagal melakukan void/refund transaksi.')
+        }
+    }
 
   const exportToExcel = () => {
     // Prepare Data for Excel
@@ -98,17 +138,32 @@ export const TransactionList = () => {
                             {new Date(t.created_at).toLocaleString('id-ID')}
                         </td>
                         <td className="p-4">
-                            <span className="bg-gray-100 px-2.5 py-1 rounded-md text-xs font-bold uppercase text-gray-600 border border-gray-200">
+                            <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase border ${t.is_voided ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                                 {t.payment_method}
                             </span>
+                            {t.is_voided && (
+                                <div className="mt-1 text-[10px] font-bold text-red-600">VOIDED</div>
+                            )}
                         </td>
-                        <td className="p-4 text-right font-bold text-gray-800">
+                        <td className={`p-4 text-right font-bold ${t.is_voided ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
                             Rp {t.total_amount.toLocaleString('id-ID')}
                         </td>
                         <td className="p-4 text-center">
-                            <button onClick={() => setSelectedTransaction(t)} className="p-2 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors">
-                                <EyeIcon className="h-5 w-5" />
-                            </button>
+                            <div className="flex items-center justify-center gap-2">
+                                <button onClick={() => setSelectedTransaction(t)} className="p-2 hover:bg-indigo-100 text-indigo-600 rounded-lg transition-colors">
+                                    <EyeIcon className="h-5 w-5" />
+                                </button>
+                                {user?.role === 'admin' && (
+                                    <button
+                                        disabled={!!t.is_voided}
+                                        onClick={() => handleDeleteTransaction(t.id)}
+                                        className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                        title={t.is_voided ? 'Sudah void' : 'Void/Refund transaksi'}
+                                    >
+                                        <TrashIcon className="h-5 w-5" />
+                                    </button>
+                                )}
+                            </div>
                         </td>
                     </tr>
                 ))}
@@ -145,15 +200,40 @@ export const TransactionList = () => {
                   </div>
 
                   <div className="border-t pt-4 mt-4 space-y-2">
+                      {selectedTransaction.is_voided && (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                              <div className="font-bold">Transaksi ini sudah void/refund</div>
+                              {selectedTransaction.voided_at && (
+                                  <div>Waktu: {new Date(selectedTransaction.voided_at).toLocaleString('id-ID')}</div>
+                              )}
+                              {selectedTransaction.void_reason && (
+                                  <div>Alasan: {selectedTransaction.void_reason}</div>
+                              )}
+                          </div>
+                      )}
                       <div className="flex justify-between text-sm">
                           <span className="text-gray-500">Subtotal</span>
-                          <span className="font-bold">Rp {selectedTransaction.total_amount.toLocaleString('id-ID')}</span>
+                          <span className={`font-bold ${selectedTransaction.is_voided ? 'line-through text-gray-400' : ''}`}>Rp {selectedTransaction.total_amount.toLocaleString('id-ID')}</span>
                       </div>
-                      <div className="flex justify-between text-lg font-bold text-indigo-600">
+                      <div className={`flex justify-between text-lg font-bold ${selectedTransaction.is_voided ? 'text-gray-400 line-through' : 'text-indigo-600'}`}>
                           <span>Total</span>
                           <span>Rp {selectedTransaction.total_amount.toLocaleString('id-ID')}</span>
                       </div>
-                      <button className="w-full mt-4 bg-gray-900 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-black shadow-lg">
+                      <button
+                          disabled={!!selectedTransaction.is_voided}
+                          onClick={() => printReceipt({
+                              transactionId: selectedTransaction.id,
+                              createdAt: selectedTransaction.created_at,
+                              paymentMethod: selectedTransaction.payment_method,
+                              total: selectedTransaction.total_amount,
+                              items: selectedTransaction.items.map((item) => ({
+                                  name: item.product_name,
+                                  qty: item.qty,
+                                  price: item.price,
+                              })),
+                          })}
+                          className="w-full mt-4 bg-gray-900 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-black shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
                           <PrinterIcon className="h-5 w-5" /> Print Receipt
                       </button>
                   </div>

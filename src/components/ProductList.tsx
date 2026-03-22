@@ -11,6 +11,9 @@ import {
 } from '@heroicons/react/24/solid'
 import { UnitManager } from './UnitManager'
 import { RestockModal } from './RestockModal'
+import { CategoryManager } from './CategoryManager'
+import { useAuth } from '../context/AuthContext'
+import { buildApiUrl, buildAssetUrl } from '../config/api'
 
 interface Product {
     id: number;
@@ -22,6 +25,9 @@ interface Product {
     category: string;
     unit: string;
     image?: string;
+    nearest_expired_at?: string;
+    near_expiry?: boolean;
+    low_stock?: boolean;
 }
 
 interface Category {
@@ -35,25 +41,27 @@ interface Unit {
 }
 
 export const ProductList = () => {
+    const { token } = useAuth()
     const [products, setProducts] = useState<Product[]>([])
     const [categories, setCategories] = useState<Category[]>([])
     const [units, setUnits] = useState<Unit[]>([])
     const [search, setSearch] = useState('')
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isUnitManagerOpen, setIsUnitManagerOpen] = useState(false)
+    const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
     const [isRestockModalOpen, setIsRestockModalOpen] = useState(false) // New State
     const [editingProduct, setEditingProduct] = useState<Product | null>(null)
     const formRef = useRef<HTMLFormElement>(null)
 
     const fetchAll = () => {
-        fetch('http://localhost:3000/api/products').then(res => res.json()).then(setProducts)
-        fetch('http://localhost:3000/api/categories').then(res => res.json()).then(setCategories)
-        fetch('http://localhost:3000/api/units').then(res => res.json()).then(setUnits)
+        fetch(buildApiUrl('/api/products')).then(res => res.json()).then(setProducts)
+        fetch(buildApiUrl('/api/categories')).then(res => res.json()).then(setCategories)
+        fetch(buildApiUrl('/api/units')).then(res => res.json()).then(setUnits)
     }
 
     useEffect(() => {
         fetchAll()
-    }, [isUnitManagerOpen])
+    }, [isUnitManagerOpen, isCategoryManagerOpen])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -61,14 +69,15 @@ export const ProductList = () => {
         
         const formData = new FormData(formRef.current)
         const url = editingProduct 
-            ? `http://localhost:3000/api/products/${editingProduct.id}`
-            : 'http://localhost:3000/api/products'
+            ? buildApiUrl(`/api/products/${editingProduct.id}`)
+            : buildApiUrl('/api/products')
         
         const method = editingProduct ? 'PUT' : 'POST'
 
         try {
             const res = await fetch(url, {
                 method,
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
                 body: formData
             })
             if (res.ok) {
@@ -83,16 +92,23 @@ export const ProductList = () => {
 
     const handleDelete = async (id: number) => {
         if (confirm('Apakah anda yakin ingin menghapus produk ini?')) {
-            await fetch(`http://localhost:3000/api/products/${id}`, { method: 'DELETE' })
+            await fetch(buildApiUrl(`/api/products/${id}`), {
+                method: 'DELETE',
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            })
             fetchAll()
         }
     }
 
-    const filteredProducts = products.filter(p => 
-        p.name.toLowerCase().includes(search.toLowerCase()) || 
-        p.barcode.includes(search) ||
-        p.category.toLowerCase().includes(search.toLowerCase())
-    )
+    const filteredProducts = products.filter(p => {
+        if (search === 'low_stock_filter') return !!p.low_stock
+        if (search === 'near_expiry_filter') return !!p.near_expiry
+        return (
+            p.name.toLowerCase().includes(search.toLowerCase()) ||
+            p.barcode.includes(search) ||
+            p.category.toLowerCase().includes(search.toLowerCase())
+        )
+    })
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
@@ -104,9 +120,9 @@ export const ProductList = () => {
                     <input 
                         type="text" 
                         placeholder="Cari nama, barcode, atau kategori..." 
-                        value={search}
+                        value={search === 'low_stock_filter' ? 'Filter: Stok Rendah' : search === 'near_expiry_filter' ? 'Filter: Hampir Kadaluarsa' : search}
                         onChange={e => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+                        className={`w-full pl-10 pr-4 py-2.5 bg-white border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm ${search === 'low_stock_filter' ? 'border-red-300 text-red-700 font-bold' : search === 'near_expiry_filter' ? 'border-amber-300 text-amber-700 font-bold' : 'border-gray-200'}`}
                     />
                  </div>
                </div>
@@ -119,6 +135,13 @@ export const ProductList = () => {
                     <span>Stock Masuk</span>
                  </button>
                  <button 
+                          onClick={() => setIsCategoryManagerOpen(true)}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 font-bold transition-all shadow-sm"
+                      >
+                          <AdjustmentsHorizontalIcon className="h-5 w-5" />
+                          <span>Kategori</span>
+                      </button>
+                      <button 
                     onClick={() => setIsUnitManagerOpen(true)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 font-bold transition-all shadow-sm"
                  >
@@ -142,6 +165,35 @@ export const ProductList = () => {
                 onSuccess={fetchAll}
             />
 
+            {/* Low Stock / Near Expiry Summary Banner */}
+            {(() => {
+                const lowCount = products.filter(p => p.low_stock).length
+                const expCount = products.filter(p => p.near_expiry).length
+                if (lowCount === 0 && expCount === 0) return null
+                return (
+                    <div className="mx-4 mt-4 flex flex-wrap gap-3">
+                        {lowCount > 0 && (
+                            <button
+                                onClick={() => setSearch('low_stock_filter')}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-bold hover:bg-red-100 transition-colors"
+                            >
+                                <span className="w-5 h-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">{lowCount}</span>
+                                Produk stok rendah
+                            </button>
+                        )}
+                        {expCount > 0 && (
+                            <button
+                                onClick={() => setSearch('near_expiry_filter')}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-sm font-bold hover:bg-amber-100 transition-colors"
+                            >
+                                <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-xs flex items-center justify-center">{expCount}</span>
+                                Produk hampir kadaluarsa
+                            </button>
+                        )}
+                    </div>
+                )
+            })()}
+
             {/* Table */}
             <div className="flex-1 overflow-auto">
                 <table className="w-full text-left">
@@ -162,7 +214,7 @@ export const ProductList = () => {
                                     <div className="flex items-center gap-3">
                                         <div className="w-12 h-12 rounded-lg bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden">
                                             {product.image ? (
-                                                <img src={`http://localhost:3000${product.image}`} className="w-full h-full object-cover" />
+                                                <img src={buildAssetUrl(product.image)} className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="text-gray-300 text-[10px] font-bold">NO IMG</div>
                                             )}
@@ -185,6 +237,10 @@ export const ProductList = () => {
                                 <td className="px-6 py-3 text-center">
                                     <div className={`font-bold inline-flex items-center gap-1 ${product.stock <= 10 ? 'text-red-500' : 'text-green-600'}`}>
                                         {product.stock} <span className="text-xs text-gray-400 font-normal">{product.unit || 'Pcs'}</span>
+                                    </div>
+                                    <div className="mt-1 flex justify-center gap-1">
+                                        {product.low_stock && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-bold">LOW</span>}
+                                        {product.near_expiry && <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">EXP</span>}
                                     </div>
                                 </td>
                                 <td className="px-6 py-3 text-right">
@@ -272,6 +328,12 @@ export const ProductList = () => {
                             </div>
 
                             <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-1">Tanggal Kadaluarsa (Stok Awal)</label>
+                                <input name="expired_at" type="date" className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <p className="text-xs text-gray-400 mt-1">Kosongkan jika produk tidak memiliki tanggal kadaluarsa.</p>
+                            </div>
+
+                            <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">Foto Produk</label>
                                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 flex flex-col items-center justify-center text-gray-400 hover:bg-gray-50 hover:border-indigo-300 transition-all cursor-pointer relative">
                                     <input name="image" type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" />
@@ -290,6 +352,7 @@ export const ProductList = () => {
             )}
 
             <UnitManager isOpen={isUnitManagerOpen} onClose={() => setIsUnitManagerOpen(false)} />
+            <CategoryManager isOpen={isCategoryManagerOpen} onClose={() => setIsCategoryManagerOpen(false)} />
         </div>
     )
 }

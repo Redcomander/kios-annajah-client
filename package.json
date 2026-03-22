@@ -6,9 +6,51 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "dev:monitoring": "vite --mode monitoring --host 0.0.0.0 --open",
+    "build:backend": "node scripts/build-backend.mjs",
+    "build:web": "tsc && vite build --mode monitoring",
+    "build:desktop": "npm run build:backend && tsc && vite build && electron-builder",
+    "build": "npm run build:desktop",
+    "preview:web": "vite preview --host 0.0.0.0 --port 4173 --open",
     "preview": "vite preview",
     "lint": "eslint ."
+  },
+  "build": {
+    "appId": "com.kiosannajah.desktop",
+    "productName": "Kios Annajah",
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/icons",
+        "to": "icons",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "icon": "build/icons/icon.ico",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "installerIcon": "build/icons/icon.ico",
+      "uninstallerIcon": "build/icons/icon.ico"
+    }
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { UserIcon, LockClosedIcon, EyeIcon, EyeSlashIcon, ArrowRightIcon } from '@heroicons/react/24/solid'
+import { buildApiUrl } from '../config/api'
+import { APP_DISPLAY_NAME, MONITORING_MODE } from '../config/appMode'
 
 export const LoginPage = () => {
   const [username, setUsername] = useState('')
@@ -16,7 +18,7 @@ export const LoginPage = () => {
     setLoading(true)
 
     try {
-      const res = await fetch('http://localhost:3000/api/login', {
+      const res = await fetch(buildApiUrl('/api/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
@@ -46,12 +48,14 @@ export const LoginPage = () => {
             <div className="w-14 h-14 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center mb-6 border border-white/10">
                 <LockClosedIcon className="h-7 w-7 text-white" />
             </div>
-            <h1 className="text-3xl font-extrabold mb-3 tracking-tight">Kasir Pro</h1>
-            <p className="text-gray-400 text-lg font-medium leading-relaxed">Platform manajemen toko modern untuk bisnis anda.</p>
+            <h1 className="text-3xl font-extrabold mb-3 tracking-tight">{APP_DISPLAY_NAME}</h1>
+            <p className="text-gray-400 text-lg font-medium leading-relaxed">
+              {MONITORING_MODE ? 'Monitoring bisnis online untuk stok, laporan, transaksi, dan staff.' : 'Platform manajemen toko modern untuk bisnis anda.'}
+            </p>
           </div>
           
           <div className="text-sm text-gray-500 font-medium relative z-10">
-            &copy; 2024 Kasir System v1.2
+            &copy; 2024 {MONITORING_MODE ? 'Kios Annajah Monitoring' : 'Kasir System v1.2'}
           </div>
 
           {/* Abstract Shapes */}
@@ -63,7 +67,9 @@ export const LoginPage = () => {
         <div className="flex-1 p-12 flex flex-col justify-center">
           <div className="mb-10">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Selamat Datang 👋</h2>
-            <p className="text-gray-500 font-medium">Masuk untuk mengakses dashboard.</p>
+            <p className="text-gray-500 font-medium">
+              {MONITORING_MODE ? 'Masuk untuk mengakses dashboard monitoring.' : 'Masuk untuk mengakses dashboard.'}
+            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">

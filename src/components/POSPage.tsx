@@ -1,13 +1,19 @@
 import { CreditCardIcon, MinusIcon, PlusIcon } from '@heroicons/react/24/solid'
 import { ProductCard } from './ProductCard'
+import { useEffect, useState } from 'react'
+import { printReceipt, type ReceiptData } from '../utils/receipt'
 
 interface Product {
   id: number;
   name: string;
   price: number;
   category: string;
+    barcode?: string;
   stock: number;
   image?: string;
+    nearest_expired_at?: string;
+    near_expiry?: boolean;
+    low_stock?: boolean;
 }
 
 interface CartItem {
@@ -22,15 +28,58 @@ interface POSPageProps {
     products: Product[];
     addToCart: (product: any) => void;
     updateQty: (id: number, delta: number) => void;
-    handleCheckout: () => void;
+    handleCheckout: (paymentMethod: string, cashReceived?: number, referenceNumber?: string) => Promise<{ ok: boolean; message: string; transactionId?: number; receipt?: ReceiptData }>;
     total: number;
     search: string;
+    onSearchInput: (s: string) => void;
+    onSearchSubmit: () => void;
     setSearch: (s: string) => void;
     filteredProducts: Product[];
 }
 
-export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, total, search, setSearch, filteredProducts }: POSPageProps) => {
+export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, total, search, onSearchInput, onSearchSubmit, setSearch, filteredProducts }: POSPageProps) => {
+
+    const warningProducts = products
+        .filter((product) => product.low_stock || product.near_expiry)
+        .slice(0, 4)
+
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false)
+    const [isProcessing, setIsProcessing] = useState(false)
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'qris'>('cash')
+    const [cashReceived, setCashReceived] = useState('')
+    const [referenceNumber, setReferenceNumber] = useState('')
+    const [resultModal, setResultModal] = useState<{ open: boolean; ok: boolean; message: string; receipt?: ReceiptData }>({
+        open: false,
+        ok: false,
+        message: '',
+    })
+
+    const onConfirmCheckout = async () => {
+        setIsProcessing(true)
+        const parsedCash = paymentMethod === 'cash' && cashReceived ? parseFloat(cashReceived.replace(/\D/g, '')) : undefined
+        const ref = (paymentMethod === 'transfer' || paymentMethod === 'qris') && referenceNumber.trim() ? referenceNumber.trim() : undefined
+        const result = await handleCheckout(paymentMethod, parsedCash, ref)
+        setIsProcessing(false)
+        setIsConfirmOpen(false)
+        setCashReceived('')
+        setReferenceNumber('')
+        setResultModal({ open: true, ok: result.ok, message: result.message, receipt: result.receipt })
+    }
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.code === 'Space' && document.activeElement?.tagName !== 'INPUT' && cart.length > 0) {
+                event.preventDefault()
+                setIsConfirmOpen(true)
+            }
+        }
+
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [cart.length])
+
     return (
+        <>
         <div className="grid grid-cols-12 gap-6 h-full pb-4">
             {/* Left Side: Cart */}
             <div className="col-span-4 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col h-full overflow-hidden">
@@ -81,7 +130,7 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                     <span>Rp {total.toLocaleString('id-ID')}</span>
                 </div>
                 <button 
-                    onClick={handleCheckout}
+                    onClick={() => setIsConfirmOpen(true)}
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 transition-all active:scale-95 flex items-center justify-center gap-2"
                 >
                     <span>Bayar Sekarang (Space)</span>
@@ -96,7 +145,13 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                     id="search-input"
                     type="text" 
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onChange={(e) => onSearchInput(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault()
+                            onSearchSubmit()
+                        }
+                    }}
                     placeholder="Cari Produk (Scan Barcode / Ketik F1)..." 
                     className="w-full bg-gray-100 border-none rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 outline-none font-medium"
                     autoFocus
@@ -109,6 +164,24 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                     ))}
                 </div>
                 </div>
+
+                {warningProducts.length > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
+                        <div className="text-sm font-bold text-amber-700 mb-2">Peringatan Stok & Kadaluarsa</div>
+                        <div className="space-y-1.5">
+                            {warningProducts.map((product) => (
+                                <div key={product.id} className="text-xs text-amber-800 flex justify-between gap-2">
+                                    <span className="font-semibold truncate">{product.name}</span>
+                                    <span className="text-right whitespace-nowrap">
+                                        {product.low_stock ? `Stok rendah (${product.stock})` : ''}
+                                        {product.low_stock && product.near_expiry ? ' • ' : ''}
+                                        {product.near_expiry ? `Segera kadaluarsa (${new Date(product.nearest_expired_at || '').toLocaleDateString('id-ID')})` : ''}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
                 
                 <div className="flex-1 overflow-y-auto pr-2">
                     <div className="grid grid-cols-4 gap-4 pb-20">
@@ -124,5 +197,124 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                 </div>
             </div>
         </div>
+
+        {isConfirmOpen && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">Konfirmasi Pembayaran</h3>
+                    <p className="text-sm text-gray-500 mb-5">Pastikan item dan jumlah sudah sesuai sebelum transaksi disimpan.</p>
+
+                    <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 mb-6 space-y-2">
+                        <div className="flex justify-between text-sm text-gray-500">
+                            <span>Jumlah item</span>
+                            <span className="font-bold text-gray-700">{cart.length}</span>
+                        </div>
+                        <div>
+                            <div className="text-sm text-gray-500 mb-2">Metode Pembayaran</div>
+                            <div className="grid grid-cols-3 gap-2">
+                                {[
+                                    { value: 'cash', label: 'Cash' },
+                                    { value: 'transfer', label: 'Transfer' },
+                                    { value: 'qris', label: 'QRIS' },
+                                ].map((method) => (
+                                    <button
+                                        key={method.value}
+                                        type="button"
+                                        onClick={() => setPaymentMethod(method.value as 'cash' | 'transfer' | 'qris')}
+                                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${paymentMethod === method.value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:text-indigo-600'}`}
+                                    >
+                                        {method.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        {paymentMethod === 'cash' && (
+                            <div>
+                                <label className="text-sm text-gray-500 block mb-1">Uang Diterima</label>
+                                <input
+                                    type="number"
+                                    min={total}
+                                    step={1000}
+                                    value={cashReceived}
+                                    onChange={(e) => setCashReceived(e.target.value)}
+                                    placeholder={`Min. Rp ${total.toLocaleString('id-ID')}`}
+                                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                                {cashReceived && Number(cashReceived) >= total && (
+                                    <div className="mt-2 flex justify-between text-sm font-bold text-green-600">
+                                        <span>Kembalian</span>
+                                        <span>Rp {(Number(cashReceived) - total).toLocaleString('id-ID')}</span>
+                                    </div>
+                                )}
+                                {cashReceived && Number(cashReceived) < total && (
+                                    <p className="mt-1 text-xs text-red-500">Uang kurang dari total</p>
+                                )}
+                            </div>
+                        )}
+                        {(paymentMethod === 'transfer' || paymentMethod === 'qris') && (
+                            <div>
+                                <label className="text-sm text-gray-500 block mb-1">No. Referensi (opsional)</label>
+                                <input
+                                    type="text"
+                                    value={referenceNumber}
+                                    onChange={(e) => setReferenceNumber(e.target.value)}
+                                    placeholder="Contoh: TRF20240322001"
+                                    className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                            </div>
+                        )}
+                        <div className="flex justify-between text-lg font-bold text-indigo-600">
+                            <span>Total Bayar</span>
+                            <span>Rp {total.toLocaleString('id-ID')}</span>
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-3">
+                        <button
+                            disabled={isProcessing}
+                            onClick={() => setIsConfirmOpen(false)}
+                            className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            Batal
+                        </button>
+                        <button
+                            disabled={isProcessing || (paymentMethod === 'cash' && cashReceived !== '' && Number(cashReceived) < total)}
+                            onClick={onConfirmCheckout}
+                            className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
+                        >
+                            {isProcessing ? 'Memproses...' : 'Konfirmasi Bayar'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {resultModal.open && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-4">
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
+                    <h3 className={`text-xl font-bold mb-2 ${resultModal.ok ? 'text-green-600' : 'text-red-600'}`}>
+                        {resultModal.ok ? 'Transaksi Berhasil' : 'Transaksi Gagal'}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-6">{resultModal.message}</p>
+                    <div className="flex justify-end gap-3">
+                        {resultModal.ok && resultModal.receipt && (
+                            <button
+                                onClick={() => printReceipt(resultModal.receipt as ReceiptData)}
+                                className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50"
+                            >
+                                Print Receipt
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setResultModal({ open: false, ok: false, message: '', receipt: undefined })}
+                            className="px-4 py-2.5 rounded-xl bg-gray-900 text-white font-semibold hover:bg-black"
+                        >
+                            Tutup
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+        </>
     )
 }

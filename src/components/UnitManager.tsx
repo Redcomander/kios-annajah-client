@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { XMarkIcon, PlusIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/solid'
+import { useAuth } from '../context/AuthContext'
+import { buildApiUrl } from '../config/api'
 
 interface Unit {
     id: number;
@@ -12,13 +14,14 @@ interface UnitManagerProps {
 }
 
 export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
+    const { token } = useAuth()
     const [units, setUnits] = useState<Unit[]>([])
     const [newUnit, setNewUnit] = useState('')
     const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
     const [isLoading, setIsLoading] = useState(false)
 
     const fetchUnits = () => {
-        fetch('http://localhost:3000/api/units')
+        fetch(buildApiUrl('/api/units'))
             .then(res => res.json())
             .then(data => setUnits(Array.isArray(data) ? data : []))
             .catch(err => console.error(err))
@@ -34,15 +37,18 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
 
         setIsLoading(true)
         const url = editingUnit 
-            ? `http://localhost:3000/api/units/${editingUnit.id}`
-            : 'http://localhost:3000/api/units'
+            ? buildApiUrl(`/api/units/${editingUnit.id}`)
+            : buildApiUrl('/api/units')
         
         const method = editingUnit ? 'PUT' : 'POST'
 
         try {
             const res = await fetch(url, {
                 method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({ name: newUnit })
             })
             if (res.ok) {
@@ -60,7 +66,10 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
     const handleDelete = async (id: number) => {
         if (!confirm('Hapus satuan ini?')) return
         try {
-            await fetch(`http://localhost:3000/api/units/${id}`, { method: 'DELETE' })
+            await fetch(buildApiUrl(`/api/units/${id}`), {
+                method: 'DELETE',
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            })
             fetchUnits()
         } catch (error) {
             console.error(error)

@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { type ReceiptData } from './utils/receipt'
 import { ProductList } from './components/ProductList'
 import { TransactionList } from './components/TransactionList'
 import { Reports } from './components/Reports'
 import { POSPage } from './components/POSPage'
 import { UserList } from './components/UserList'
 import { SettingsPage } from './components/SettingsPage'
+import { ActivityLog } from './components/ActivityLog'
 import { 
   Squares2X2Icon, 
   ArchiveBoxIcon, 
@@ -12,10 +14,15 @@ import {
   ChartBarIcon, 
   UsersIcon, 
   Cog6ToothIcon, 
-  ArrowLeftOnRectangleIcon 
+  ArrowLeftOnRectangleIcon,
+  ClipboardDocumentListIcon
 } from '@heroicons/react/24/solid'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LoginPage } from './pages/LoginPage'
+import { ENABLE_POS, buildApiUrl, getApiSourceLabel } from './config/api'
+import { APP_SHORT_NAME, APP_STATUS_LABEL, MONITORING_MODE } from './config/appMode'
+import logoKasir from './assets/logo-kasir.svg'
+import logoMonitoring from './assets/logo-monitoring.svg'
 
 // Interface matches Go Struct
 interface Product {
@@ -23,9 +30,13 @@ interface Product {
   name: string;
   price: number;
   category: string;
+  barcode?: string;
   stock: number;
   image?: string;
   unit?: string;
+  nearest_expired_at?: string;
+  near_expiry?: boolean;
+  low_stock?: boolean;
 }
 
 interface CartItem {
@@ -33,6 +44,13 @@ interface CartItem {
   name: string;
   price: number;
   qty: number;
+}
+
+interface CheckoutResult {
+  ok: boolean;
+  message: string;
+  transactionId?: number;
+  receipt?: ReceiptData;
 }
 
 const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
@@ -51,15 +69,16 @@ const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick:
 
 const ProtectedApp = () => {
     const { user, logout, token } = useAuth()
-    const [activeTab, setActiveTab] = useState('pos')
+  const [activeTab, setActiveTab] = useState(ENABLE_POS ? 'pos' : 'products')
     const [products, setProducts] = useState<Product[]>([])
     const [cart, setCart] = useState<CartItem[]>([])
     const [search, setSearch] = useState('')
+    const [apiSourceLabel] = useState(getApiSourceLabel())
 
     // Fetch Products from Go Backend
     useEffect(() => {
         if (activeTab === 'pos' || activeTab === 'products') {
-            fetch('http://localhost:3000/api/products', {
+          fetch(buildApiUrl('/api/products'), {
                 headers: { 'Authorization': `Bearer ${token}` }
             })
                 .then(res => res.json())
@@ -71,6 +90,12 @@ const ProtectedApp = () => {
                 .catch(err => console.error("Failed to fetch products:", err))
         }
     }, [activeTab, token]) 
+
+    useEffect(() => {
+      if (!ENABLE_POS && activeTab === 'pos') {
+        setActiveTab('products')
+      }
+    }, [activeTab])
 
     const addToCart = (product: any) => {
         setCart(prev => {
@@ -98,17 +123,57 @@ const ProtectedApp = () => {
 
     const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0)
 
+    const normalizeBarcode = (value: string) => value.replace(/[\r\n\t\s]+/g, '').trim().toLowerCase()
+
+    const findProductByBarcode = (value: string) => {
+      const raw = value.trim().toLowerCase()
+      const normalized = normalizeBarcode(value)
+      if (!raw && !normalized) {
+        return undefined
+      }
+
+      return products.find((product) => {
+        const barcode = product.barcode || ''
+        const barcodeRaw = barcode.trim().toLowerCase()
+        const barcodeNormalized = normalizeBarcode(barcode)
+        return barcodeRaw === raw || barcodeNormalized === normalized
+      })
+    }
+
+    const handleSearchInput = (value: string) => {
+      setSearch(value)
+
+      const matched = findProductByBarcode(value)
+      if (matched) {
+        addToCart(matched)
+        setSearch('')
+      }
+    }
+
+    const handleSearchSubmit = () => {
+      const matched = findProductByBarcode(search)
+      if (matched) {
+        addToCart(matched)
+        setSearch('')
+      }
+    }
+
     const filteredProducts = products.filter(p => 
         p.name.toLowerCase().includes(search.toLowerCase()) || 
-        p.category.toLowerCase().includes(search.toLowerCase())
+      p.category.toLowerCase().includes(search.toLowerCase()) ||
+      p.barcode?.toLowerCase().includes(search.toLowerCase())
     )
 
-    const handleCheckout = () => {
-        if (cart.length === 0) return
+    const handleCheckout = async (paymentMethod: string, cashReceived?: number, referenceNumber?: string): Promise<CheckoutResult> => {
+      if (cart.length === 0) {
+        return { ok: false, message: 'Keranjang masih kosong.' }
+      }
+
+        const createdAt = new Date().toISOString()
 
         const payload = {
             total: total,
-            paymentMethod: 'cash',
+            paymentMethod,
             items: cart.map(item => ({
                 product_id: item.product_id,
                 product_name: item.name,
@@ -117,37 +182,55 @@ const ProtectedApp = () => {
             }))
         }
 
-        fetch('http://localhost:3000/api/checkout', {
+        try {
+          const res = await fetch(buildApiUrl('/api/checkout'), {
             method: 'POST',
             headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}` 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}` 
             },
             body: JSON.stringify(payload)
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.id) {
-                alert("Transaksi Berhasil! ID: " + data.id)
-                setCart([]) 
-                fetch('http://localhost:3000/api/products', {
-                     headers: { 'Authorization': `Bearer ${token}` }
-                }).then(res => res.json()).then(setProducts)
-            } else {
-                alert("Gagal: " + JSON.stringify(data))
+          })
+
+          const data = await res.json()
+
+          if (res.ok && data.id) {
+            setCart([])
+            fetch(buildApiUrl('/api/products'), {
+              headers: { 'Authorization': `Bearer ${token}` }
+            }).then(res => res.json()).then(setProducts)
+
+            return {
+              ok: true,
+              message: `Transaksi berhasil disimpan. ID: #${data.id}`,
+              transactionId: data.id,
+              receipt: {
+                transactionId: data.id,
+                createdAt,
+                paymentMethod,
+                total,
+                items: cart.map((item) => ({
+                  name: item.name,
+                  qty: item.qty,
+                  price: item.price,
+                })),
+                cashReceived,
+                change: cashReceived != null ? cashReceived - total : undefined,
+                referenceNumber,
+              },
             }
-        })
-        .catch(err => alert("Error: " + err))
+          }
+
+          return { ok: false, message: data.error || 'Transaksi gagal diproses.' }
+        } catch (err) {
+          return { ok: false, message: `Error koneksi: ${String(err)}` }
+        }
     }
 
   const handleKeyDown = (e: KeyboardEvent) => {
      if (e.key === 'F1') {
         e.preventDefault()
         document.getElementById('search-input')?.focus()
-     }
-     if (e.code === 'Space' && document.activeElement?.tagName !== 'INPUT') {
-        e.preventDefault()
-        if (cart.length > 0) handleCheckout()
      }
   }
 
@@ -160,19 +243,26 @@ const ProtectedApp = () => {
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden selection:bg-indigo-100">
       {/* Sidebar */}
       <aside className="w-24 bg-white shadow-2xl flex flex-col items-center py-6 z-20 border-r border-gray-100">
-        <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-extrabold text-2xl mb-10 shadow-lg shadow-indigo-200 transform rotate-3 hover:rotate-0 transition-all duration-300">
-          K
+        <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 p-1.5 mb-3 shadow-lg shadow-indigo-100 transform rotate-3 hover:rotate-0 transition-all duration-300">
+          <img src={MONITORING_MODE ? logoMonitoring : logoKasir} alt="App Logo" className="w-full h-full object-contain" />
+        </div>
+        <div className="text-[10px] font-extrabold uppercase tracking-wide text-indigo-600 mb-6 text-center px-2">
+          {APP_SHORT_NAME}
         </div>
         
         <nav className="flex-1 flex flex-col gap-4 w-full px-3">
-          <NavButton active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} icon={<Squares2X2Icon className="h-6 w-6" />} label="POS" />
-          <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<ArchiveBoxIcon className="h-6 w-6" />} label="Produk" />
-          <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-6 w-6" />} label="Riwayat" />
+          {ENABLE_POS && <NavButton active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} icon={<Squares2X2Icon className="h-6 w-6" />} label="POS" />}
+          <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<ArchiveBoxIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Stok' : 'Produk'} />
+          <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Transaksi' : 'Riwayat'} />
           <NavButton active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={<ChartBarIcon className="h-6 w-6" />} label="Laporan" />
           
           {/* Admin Only Tab */}
           {user?.role === 'admin' && (
              <NavButton active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<UsersIcon className="h-6 w-6" />} label="Staff" />
+          )}
+          {/* Activity Log - admin only */}
+          {user?.role === 'admin' && (
+            <NavButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')} icon={<ClipboardDocumentListIcon className="h-6 w-6" />} label="Log" />
           )}
         </nav>
 
@@ -193,14 +283,33 @@ const ProtectedApp = () => {
         <header className="flex justify-between items-center mb-6 px-1">
           <div>
             <h1 className="text-3xl font-extrabold text-gray-900 capitalize tracking-tight">
-                {activeTab === 'pos' ? 'Kasir Warung' : activeTab === 'users' ? 'Manajemen Staff' : activeTab === 'settings' ? 'Pengaturan' : activeTab}
+                {
+                  activeTab === 'pos'
+                    ? 'Kasir Warung'
+                    : activeTab === 'users'
+                      ? 'Manajemen Staff'
+                      : activeTab === 'settings'
+                        ? 'Pengaturan'
+                        : activeTab === 'products'
+                          ? (MONITORING_MODE ? 'Monitoring Produk & Stok' : 'Produk & Stok')
+                          : activeTab === 'history'
+                            ? (MONITORING_MODE ? 'Monitoring Transaksi' : 'Riwayat Transaksi')
+                            : activeTab === 'reports'
+                              ? (MONITORING_MODE ? 'Monitoring Laporan' : 'Laporan Penjualan')
+                              : activeTab === 'activity'
+                                ? 'Log Aktivitas'
+                              : activeTab
+                }
             </h1>
             <p className="text-sm text-gray-500 font-medium mt-1">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
           <div className="flex items-center gap-4">
              <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm border border-green-100 flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
-                <span className="text-green-700 font-bold text-xs uppercase tracking-wide">Online</span>
+               <div className="flex flex-col leading-none">
+                <span className="text-green-700 font-bold text-xs uppercase tracking-wide">{APP_STATUS_LABEL}</span>
+                <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide mt-1">{apiSourceLabel}</span>
+               </div>
              </div>
              <div className="flex items-center gap-3 bg-white p-1.5 pr-5 rounded-full shadow-sm border border-gray-100">
                 <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm uppercase shadow-md pointer-events-none select-none">
@@ -215,7 +324,7 @@ const ProtectedApp = () => {
         </header>
 
         <div className="h-[calc(100vh-120px)] rounded-3xl overflow-hidden shadow-sm border border-gray-200/50 bg-white">
-           {activeTab === 'pos' && (
+             {ENABLE_POS && activeTab === 'pos' && (
                <POSPage 
                    cart={cart} 
                    products={products} 
@@ -224,6 +333,8 @@ const ProtectedApp = () => {
                    handleCheckout={handleCheckout} 
                    total={total}
                    search={search}
+                     onSearchInput={handleSearchInput}
+                     onSearchSubmit={handleSearchSubmit}
                    setSearch={setSearch}
                    filteredProducts={filteredProducts}
                />
@@ -232,6 +343,7 @@ const ProtectedApp = () => {
            {activeTab === 'history' && <TransactionList />}
            {activeTab === 'reports' && <Reports />}
            {activeTab === 'users' && user?.role === 'admin' && <UserList />}
+           {activeTab === 'activity' && user?.role === 'admin' && <ActivityLog />}
            {activeTab === 'settings' && <SettingsPage />}
         </div>
       </main>

@@ -1,4 +1,5 @@
 import { Plus } from 'lucide-react';
+import { buildAssetUrl } from '../config/api';
 
 interface Product {
   id: number;
@@ -22,7 +23,7 @@ export const ProductCard = ({ product, onAddToCart }: ProductCardProps) => {
     >
       <div className="h-28 bg-gray-100 rounded-lg mb-3 flex items-center justify-center text-gray-400 overflow-hidden">
          {product.image ? (
-            <img src={`http://localhost:3000${product.image}`} alt={product.name} className="w-full h-full object-cover" />
+            <img src={buildAssetUrl(product.image)} alt={product.name} className="w-full h-full object-cover" />
          ) : (
             <div className="text-4xl">📦</div>
          )}

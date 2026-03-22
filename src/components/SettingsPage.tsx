@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckCircleIcon, LockClosedIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
+import { buildApiUrl } from '../config/api'
 
 export const SettingsPage = () => {
     const { user, token } = useAuth()
@@ -27,7 +28,7 @@ export const SettingsPage = () => {
 
         setLoading(true)
         try {
-            const res = await fetch('http://localhost:3000/api/profile', {
+            const res = await fetch(buildApiUrl('/api/profile'), {
                 method: 'PUT',
                 headers: { 
                     'Content-Type': 'application/json',

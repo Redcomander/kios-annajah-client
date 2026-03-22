@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { PlusIcon, TrashIcon, PencilSquareIcon, ShieldCheckIcon, UserIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
+import { buildApiUrl } from '../config/api'
 
 interface User {
     id: number;
@@ -28,7 +29,7 @@ export const UserList = () => {
     }, [token])
 
     const fetchUsers = () => {
-        fetch('http://localhost:3000/api/users', {
+        fetch(buildApiUrl('/api/users'), {
             headers: { 'Authorization': `Bearer ${token}` }
         })
         .then(res => res.json())
@@ -43,8 +44,8 @@ export const UserList = () => {
         setLoading(true)
 
         const url = editUser 
-            ? `http://localhost:3000/api/users/${editUser.id}`
-            : 'http://localhost:3000/api/users'
+            ? buildApiUrl(`/api/users/${editUser.id}`)
+            : buildApiUrl('/api/users')
         
         const method = editUser ? 'PUT' : 'POST'
 
@@ -75,7 +76,7 @@ export const UserList = () => {
     const handleDelete = async (id: number) => {
         if (!confirm('Are you sure you want to delete this user?')) return
 
-        await fetch(`http://localhost:3000/api/users/${id}`, {
+        await fetch(buildApiUrl(`/api/users/${id}`), {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
         })

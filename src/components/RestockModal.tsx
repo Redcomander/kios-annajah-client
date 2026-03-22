@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { XMarkIcon, MagnifyingGlassIcon, ArchiveBoxArrowDownIcon, ArrowRightIcon } from '@heroicons/react/24/solid'
+import { useAuth } from '../context/AuthContext'
+import { buildApiUrl } from '../config/api'
 
 // Reuse Product interface (simplified)
 interface Product {
@@ -18,10 +20,12 @@ interface RestockModalProps {
 }
 
 export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockModalProps) => {
+    const { token } = useAuth()
     const [query, setQuery] = useState('')
     const [searchResults, setSearchResults] = useState<Product[]>([])
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [addQty, setAddQty] = useState<string>('')
+    const [expiredAt, setExpiredAt] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     
@@ -54,6 +58,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         if (exactMatch) {
             setSelectedProduct(exactMatch)
             setAddQty('')
+            setExpiredAt('')
             return
         }
 
@@ -65,6 +70,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         } else if (nameMatches.length === 1) {
             setSelectedProduct(nameMatches[0])
             setAddQty('')
+            setExpiredAt('')
         } else {
             // Multiple matches found, show list
             setSearchResults(nameMatches)
@@ -74,6 +80,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
     const selectFromList = (product: Product) => {
         setSelectedProduct(product)
         setAddQty('')
+        setExpiredAt('')
         setSearchResults([])
         setQuery('')
     }
@@ -89,15 +96,15 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         }
 
         setLoading(true)
-        const newStock = selectedProduct.stock + qtyToAdd
-
-        const formData = new FormData()
-        formData.append('stock', newStock.toString())
 
         try {
-            const res = await fetch(`http://localhost:3000/api/products/${selectedProduct.id}`, {
-                method: 'PUT',
-                body: formData
+            const res = await fetch(buildApiUrl(`/api/products/${selectedProduct.id}/restock`), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ qty: qtyToAdd, expired_at: expiredAt })
             })
 
             if (res.ok) {
@@ -105,11 +112,13 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                 setSelectedProduct(null)
                 setQuery('')
                 setAddQty('')
+                setExpiredAt('')
                 setError('')
                 setSearchResults([])
                 // alert(`Stok ${selectedProduct.name} +${qtyToAdd} berhasil!`) // Optional feedback
             } else {
-                setError('Gagal mengupdate stok')
+                const data = await res.json().catch(() => null)
+                setError(data?.error || 'Gagal mengupdate stok')
             }
         } catch (err) {
             setError('Terjadi kesalahan koneksi')
@@ -222,6 +231,17 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                                     placeholder="0"
                                     min="1"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">Tanggal Kadaluarsa Batch Ini</label>
+                                <input
+                                    type="date"
+                                    value={expiredAt}
+                                    onChange={(e) => setExpiredAt(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">Opsional. Isi jika batch stok ini punya tanggal kadaluarsa.</p>
                             </div>
 
                             <div className="flex gap-3">
