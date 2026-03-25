@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { XMarkIcon, PlusIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl } from '../config/api'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Unit {
     id: number;
@@ -19,6 +20,7 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
     const [newUnit, setNewUnit] = useState('')
     const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
     const [isLoading, setIsLoading] = useState(false)
+    const [deletingUnitId, setDeletingUnitId] = useState<number | null>(null)
 
     const fetchUnits = () => {
         fetch(buildApiUrl('/api/units'))
@@ -64,13 +66,13 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
     }
 
     const handleDelete = async (id: number) => {
-        if (!confirm('Hapus satuan ini?')) return
         try {
             await fetch(buildApiUrl(`/api/units/${id}`), {
                 method: 'DELETE',
                 headers: token ? { Authorization: `Bearer ${token}` } : undefined,
             })
             fetchUnits()
+            setDeletingUnitId(null)
         } catch (error) {
             console.error(error)
         }
@@ -129,7 +131,7 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
                                     <PencilSquareIcon className="h-4 w-4" />
                                 </button>
                                 <button 
-                                    onClick={() => handleDelete(unit.id)}
+                                    onClick={() => setDeletingUnitId(unit.id)}
                                     className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
                                 >
                                     <TrashIcon className="h-4 w-4" />
@@ -143,6 +145,17 @@ export const UnitManager = ({ isOpen, onClose }: UnitManagerProps) => {
                         </div>
                     )}
                 </div>
+
+                <ConfirmDialog
+                    isOpen={deletingUnitId !== null}
+                    title="Hapus Satuan"
+                    message="Hapus satuan ini?"
+                    confirmText="Hapus"
+                    cancelText="Batal"
+                    danger
+                    onCancel={() => setDeletingUnitId(null)}
+                    onConfirm={() => deletingUnitId && handleDelete(deletingUnitId)}
+                />
             </div>
         </div>
     )

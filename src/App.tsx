@@ -74,6 +74,8 @@ const ProtectedApp = () => {
     const [cart, setCart] = useState<CartItem[]>([])
     const [search, setSearch] = useState('')
     const [apiSourceLabel] = useState(getApiSourceLabel())
+    const [isDesktop, setIsDesktop] = useState(false)
+    const [isFullscreen, setIsFullscreen] = useState(false)
 
     // Fetch Products from Go Backend
     useEffect(() => {
@@ -96,6 +98,26 @@ const ProtectedApp = () => {
         setActiveTab('products')
       }
     }, [activeTab])
+
+    useEffect(() => {
+      let dispose: (() => void) | undefined
+
+      const initDesktopState = async () => {
+        if (!window.desktopApp) {
+          return
+        }
+
+        setIsDesktop(await window.desktopApp.isDesktop())
+        setIsFullscreen(await window.desktopApp.getFullscreen())
+        dispose = window.desktopApp.onFullscreenChanged(setIsFullscreen)
+      }
+
+      void initDesktopState()
+
+      return () => {
+        dispose?.()
+      }
+    }, [])
 
     const addToCart = (product: any) => {
         setCart(prev => {
@@ -234,6 +256,24 @@ const ProtectedApp = () => {
      }
   }
 
+  const handleExitFullscreen = async () => {
+    if (!window.desktopApp) {
+      return
+    }
+
+    const nextState = await window.desktopApp.setFullscreen(false)
+    setIsFullscreen(nextState)
+  }
+
+  const handleEnterFullscreen = async () => {
+    if (!window.desktopApp) {
+      return
+    }
+
+    const nextState = await window.desktopApp.setFullscreen(true)
+    setIsFullscreen(nextState)
+  }
+
   useEffect(() => {
      window.addEventListener('keydown', handleKeyDown)
      return () => window.removeEventListener('keydown', handleKeyDown)
@@ -304,6 +344,15 @@ const ProtectedApp = () => {
             <p className="text-sm text-gray-500 font-medium mt-1">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
           <div className="flex items-center gap-4">
+             {isDesktop && (
+               <button
+                 onClick={isFullscreen ? handleExitFullscreen : handleEnterFullscreen}
+                 className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm border border-gray-200 text-gray-700 text-xs font-bold uppercase tracking-wide hover:bg-gray-100 transition"
+                 title="F11 untuk toggle fullscreen, Esc untuk keluar"
+               >
+                 {isFullscreen ? 'Keluar Fullscreen' : 'Masuk Fullscreen'}
+               </button>
+             )}
              <div className="bg-white/80 backdrop-blur-sm px-4 py-2 rounded-xl shadow-sm border border-green-100 flex items-center gap-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></div>
                <div className="flex flex-col leading-none">

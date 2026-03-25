@@ -1,5 +1,5 @@
 {
-  "name": "kasir-desktop-client",
+  "name": "kios-annajah-desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -17,7 +17,9 @@
   },
   "build": {
     "appId": "com.kiosannajah.desktop",
-    "productName": "Kios Annajah",
+    "productName": "Kios An-Najah",
+    "executableName": "KiosAnNajah",
+    "compression": "maximum",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
@@ -48,6 +50,15 @@
       "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kios An-Najah",
+      "uninstallDisplayName": "Kios An-Najah",
+      "installerHeaderIcon": "build/icons/icon.ico",
       "installerIcon": "build/icons/icon.ico",
       "uninstallerIcon": "build/icons/icon.ico"
     }

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { XMarkIcon, PlusIcon, TrashIcon, PencilSquareIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl } from '../config/api'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface Category {
   id: number;
@@ -21,6 +22,7 @@ export const CategoryManager = ({ isOpen, onClose }: CategoryManagerProps) => {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [deletingCategoryId, setDeletingCategoryId] = useState<number | null>(null)
 
   const fetchCategories = () => {
     fetch(buildApiUrl('/api/categories'))
@@ -78,8 +80,6 @@ export const CategoryManager = ({ isOpen, onClose }: CategoryManagerProps) => {
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Hapus kategori ini?')) return
-
     setError('')
     setSuccess('')
 
@@ -92,6 +92,7 @@ export const CategoryManager = ({ isOpen, onClose }: CategoryManagerProps) => {
       if (res.ok) {
         fetchCategories()
         setSuccess('Kategori berhasil dihapus.')
+        setDeletingCategoryId(null)
       } else {
         const data = await res.json().catch(() => ({}))
         setError(data.error || 'Gagal menghapus kategori.')
@@ -174,7 +175,7 @@ export const CategoryManager = ({ isOpen, onClose }: CategoryManagerProps) => {
                   <PencilSquareIcon className="h-4 w-4" />
                 </button>
                 <button
-                  onClick={() => handleDelete(category.id)}
+                  onClick={() => setDeletingCategoryId(category.id)}
                   className="p-1.5 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
                 >
                   <TrashIcon className="h-4 w-4" />
@@ -189,6 +190,17 @@ export const CategoryManager = ({ isOpen, onClose }: CategoryManagerProps) => {
             </div>
           )}
         </div>
+
+        <ConfirmDialog
+          isOpen={deletingCategoryId !== null}
+          title="Hapus Kategori"
+          message="Hapus kategori ini?"
+          confirmText="Hapus"
+          cancelText="Batal"
+          danger
+          onCancel={() => setDeletingCategoryId(null)}
+          onConfirm={() => deletingCategoryId && handleDelete(deletingCategoryId)}
+        />
       </div>
     </div>
   )

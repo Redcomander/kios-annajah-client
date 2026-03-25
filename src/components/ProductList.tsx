@@ -12,6 +12,7 @@ import {
 import { UnitManager } from './UnitManager'
 import { RestockModal } from './RestockModal'
 import { CategoryManager } from './CategoryManager'
+import { ConfirmDialog } from './ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl, buildAssetUrl } from '../config/api'
 
@@ -51,6 +52,7 @@ export const ProductList = () => {
     const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
     const [isRestockModalOpen, setIsRestockModalOpen] = useState(false) // New State
     const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+    const [deletingProductId, setDeletingProductId] = useState<number | null>(null)
     const formRef = useRef<HTMLFormElement>(null)
 
     const fetchAll = () => {
@@ -91,13 +93,12 @@ export const ProductList = () => {
     }
 
     const handleDelete = async (id: number) => {
-        if (confirm('Apakah anda yakin ingin menghapus produk ini?')) {
-            await fetch(buildApiUrl(`/api/products/${id}`), {
-                method: 'DELETE',
-                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            })
-            fetchAll()
-        }
+        await fetch(buildApiUrl(`/api/products/${id}`), {
+            method: 'DELETE',
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        })
+        fetchAll()
+        setDeletingProductId(null)
     }
 
     const filteredProducts = products.filter(p => {
@@ -163,6 +164,17 @@ export const ProductList = () => {
                 onClose={() => setIsRestockModalOpen(false)} 
                 products={products}
                 onSuccess={fetchAll}
+            />
+
+            <ConfirmDialog
+                isOpen={deletingProductId !== null}
+                title="Hapus Produk"
+                message="Apakah anda yakin ingin menghapus produk ini?"
+                confirmText="Hapus"
+                cancelText="Batal"
+                danger
+                onCancel={() => setDeletingProductId(null)}
+                onConfirm={() => deletingProductId && handleDelete(deletingProductId)}
             />
 
             {/* Low Stock / Near Expiry Summary Banner */}
@@ -252,7 +264,7 @@ export const ProductList = () => {
                                             <PencilSquareIcon className="h-5 w-5" />
                                         </button>
                                         <button 
-                                            onClick={() => handleDelete(product.id)}
+                                            onClick={() => setDeletingProductId(product.id)}
                                             className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
                                         >
                                             <TrashIcon className="h-5 w-5" />

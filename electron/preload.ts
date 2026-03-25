@@ -22,3 +22,20 @@ contextBridge.exposeInMainWorld('ipcRenderer', {
   // You can expose other APTs you need here.
   // ...
 })
+
+contextBridge.exposeInMainWorld('desktopApp', {
+  isDesktop() {
+    return ipcRenderer.invoke('desktop:is-desktop')
+  },
+  getFullscreen() {
+    return ipcRenderer.invoke('desktop:get-fullscreen')
+  },
+  setFullscreen(value: boolean) {
+    return ipcRenderer.invoke('desktop:set-fullscreen', value)
+  },
+  onFullscreenChanged(listener: (isFullscreen: boolean) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, value: boolean) => listener(value)
+    ipcRenderer.on('desktop:fullscreen-changed', handler)
+    return () => ipcRenderer.removeListener('desktop:fullscreen-changed', handler)
+  },
+})

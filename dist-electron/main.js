@@ -1,38 +1,38 @@
-import { app as n, BrowserWindow as m } from "electron";
-import { spawn as _ } from "node:child_process";
-import c from "node:fs";
-import a from "node:path";
-import { fileURLToPath as R } from "node:url";
-const s = a.dirname(R(import.meta.url)), u = a.join(s, "../dist");
-process.env.DIST = u;
-process.env.VITE_PUBLIC = n.isPackaged ? u : a.join(s, "../public");
-let e, t = null;
-const g = process.env.VITE_DEV_SERVER_URL, k = process.env.APP_PORT ?? "3000", S = `http://127.0.0.1:${k}`, y = "com.kiosannajah.desktop";
-function D(o) {
-  return new Promise((i) => setTimeout(i, o));
+import { app as t, BrowserWindow as f, ipcMain as u } from "electron";
+import { spawn as x } from "node:child_process";
+import d from "node:fs";
+import o from "node:path";
+import { fileURLToPath as D } from "node:url";
+const i = o.dirname(D(import.meta.url)), k = o.join(i, "../dist");
+process.env.DIST = k;
+process.env.VITE_PUBLIC = t.isPackaged ? k : o.join(i, "../public");
+let e, r = null;
+const b = process.env.VITE_DEV_SERVER_URL, m = process.env.APP_PORT ?? "3000", y = `http://127.0.0.1:${m}`, A = "com.kiosannajah.desktop", R = "Kios An-Najah", T = "Kios Annajah";
+function j(a) {
+  return new Promise((n) => setTimeout(n, a));
 }
-async function b() {
+async function w() {
   try {
-    return (await fetch(`${S}/`)).ok;
+    return (await fetch(`${y}/`)).ok;
   } catch {
     return !1;
   }
 }
-async function T(o = 2e4) {
-  const i = Date.now();
-  for (; Date.now() - i < o; ) {
-    if (await b())
+async function B(a = 2e4) {
+  const n = Date.now();
+  for (; Date.now() - n < a; ) {
+    if (await w())
       return;
-    await D(300);
+    await j(300);
   }
   throw new Error("The local backend did not start in time.");
 }
-function w() {
-  return n.isPackaged ? a.join(process.resourcesPath, "backend") : a.resolve(s, "../../kios-annajah-backend");
+function v() {
+  return t.isPackaged ? o.join(process.resourcesPath, "backend") : o.resolve(i, "../../kios-annajah-backend");
 }
-function A() {
-  return n.isPackaged ? {
-    command: a.join(w(), process.platform === "win32" ? "kasir-backend.exe" : "kasir-backend"),
+function I() {
+  return t.isPackaged ? {
+    command: o.join(v(), process.platform === "win32" ? "kasir-backend.exe" : "kasir-backend"),
     args: []
   } : {
     command: "go",
@@ -40,69 +40,85 @@ function A() {
   };
 }
 function l() {
-  return n.isPackaged ? a.join(process.resourcesPath, "icons", "icon.ico") : a.resolve(s, "../build/icons/icon.ico");
+  return t.isPackaged ? o.join(process.resourcesPath, "icons", "icon.ico") : o.resolve(i, "../build/icons/icon.ico");
 }
-async function B() {
-  var f, h;
-  if (await b())
+async function L() {
+  var h, g;
+  if (await w())
     return;
-  const o = w(), i = n.getPath("userData"), p = a.join(i, "data", "kios-annajah.db"), d = a.join(i, "uploads"), { command: E, args: P } = A();
-  c.mkdirSync(a.dirname(p), { recursive: !0 }), c.mkdirSync(d, { recursive: !0 }), t = _(E, P, {
-    cwd: o,
+  const a = v(), n = t.getPath("userData"), p = o.join(n, "data", "kios-annajah.db"), c = o.join(n, "uploads"), { command: P, args: _ } = I();
+  d.mkdirSync(o.dirname(p), { recursive: !0 }), d.mkdirSync(c, { recursive: !0 }), r = x(P, _, {
+    cwd: a,
     env: {
       ...process.env,
-      APP_PORT: k,
+      APP_PORT: m,
       DATABASE_PATH: p,
-      UPLOADS_DIR: d,
+      UPLOADS_DIR: c,
       JWT_SECRET: process.env.JWT_SECRET ?? "desktop-local-secret",
       CORS_ALLOW_ORIGINS: process.env.CORS_ALLOW_ORIGINS ?? "http://localhost:5173,http://127.0.0.1:5173",
       ENABLE_DEV_SEED_ROUTES: process.env.ENABLE_DEV_SEED_ROUTES ?? "false"
     },
     stdio: "pipe"
-  }), (f = t.stdout) == null || f.on("data", (r) => {
-    console.log(`[backend] ${r.toString().trim()}`);
-  }), (h = t.stderr) == null || h.on("data", (r) => {
-    console.error(`[backend] ${r.toString().trim()}`);
-  }), t.on("exit", (r) => {
-    t = null, console.log(`[backend] exited with code ${r ?? "unknown"}`);
-  }), await T();
+  }), (h = r.stdout) == null || h.on("data", (s) => {
+    console.log(`[backend] ${s.toString().trim()}`);
+  }), (g = r.stderr) == null || g.on("data", (s) => {
+    console.error(`[backend] ${s.toString().trim()}`);
+  }), r.on("exit", (s) => {
+    r = null, console.log(`[backend] exited with code ${s ?? "unknown"}`);
+  }), await B();
 }
-function v() {
-  t && !t.killed && t.kill(), t = null;
+function E() {
+  r && !r.killed && r.kill(), r = null;
 }
-function x() {
-  e = new m({
+function S() {
+  e = new f({
     width: 1440,
     height: 920,
     minWidth: 1200,
     minHeight: 760,
     autoHideMenuBar: !0,
     show: !1,
-    icon: c.existsSync(l()) ? l() : void 0,
+    fullscreen: !0,
+    icon: d.existsSync(l()) ? l() : void 0,
     webPreferences: {
-      preload: a.join(s, "preload.mjs")
+      preload: o.join(i, "preload.mjs")
     }
   }), e.once("ready-to-show", () => {
     e == null || e.show();
-  }), n.isPackaged || e.webContents.openDevTools(), e.webContents.on("did-finish-load", () => {
+  }), e.webContents.on("before-input-event", (a, n) => {
+    if (e && n.type === "keyDown") {
+      if (n.key === "F11") {
+        a.preventDefault(), e.setFullScreen(!e.isFullScreen());
+        return;
+      }
+      n.key === "Escape" && e.isFullScreen() && (a.preventDefault(), e.setFullScreen(!1));
+    }
+  }), e.on("enter-full-screen", () => {
+    e == null || e.webContents.send("desktop:fullscreen-changed", !0);
+  }), e.on("leave-full-screen", () => {
+    e == null || e.webContents.send("desktop:fullscreen-changed", !1);
+  }), t.isPackaged || e.webContents.openDevTools(), e.webContents.on("did-finish-load", () => {
     e == null || e.webContents.send("main-process-message", (/* @__PURE__ */ new Date()).toLocaleString());
-  }), g ? e.loadURL(g) : e.loadFile(a.join(u, "index.html"));
+  }), b ? e.loadURL(b) : e.loadFile(o.join(k, "index.html"));
 }
-function j(o) {
-  const i = new m({
+function C() {
+  u.handle("desktop:is-desktop", () => !0), u.handle("desktop:get-fullscreen", () => (e == null ? void 0 : e.isFullScreen()) ?? !1), u.handle("desktop:set-fullscreen", (a, n) => (e == null || e.setFullScreen(!!n), (e == null ? void 0 : e.isFullScreen()) ?? !1));
+}
+function U(a) {
+  const n = new f({
     width: 760,
     height: 620,
     minWidth: 680,
     minHeight: 520,
     autoHideMenuBar: !0,
-    icon: c.existsSync(l()) ? l() : void 0
-  }), d = `
+    icon: d.existsSync(l()) ? l() : void 0
+  }), c = `
     <!doctype html>
     <html>
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Kios Annajah - Backend Startup Error</title>
+        <title>Kios An-Najah - Backend Startup Error</title>
         <style>
           body { margin: 0; background: #f3f4f6; color: #111827; font-family: Segoe UI, Tahoma, sans-serif; }
           .wrap { max-width: 760px; margin: 0 auto; padding: 24px; }
@@ -122,11 +138,11 @@ function j(o) {
             <h1>Backend gagal dijalankan</h1>
             <p class="muted">Aplikasi desktop tidak dapat melanjutkan tanpa service backend lokal.</p>
 
-            <div class="alert">${o.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
+            <div class="alert">${a.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>
 
             <div class="section-title">Langkah perbaikan cepat</div>
             <ul>
-              <li>Pastikan port <code>${k}</code> tidak dipakai aplikasi lain.</li>
+              <li>Pastikan port <code>${m}</code> tidak dipakai aplikasi lain.</li>
               <li>Pastikan file backend tersedia di folder <code>resources/backend</code> (mode installer) atau repository backend (mode dev).</li>
               <li>Jika mode development, jalankan <code>go run .</code> di folder backend untuk melihat detail error.</li>
               <li>Restart aplikasi setelah masalah backend diperbaiki.</li>
@@ -136,21 +152,21 @@ function j(o) {
       </body>
     </html>
   `;
-  i.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(d)}`);
+  n.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(c)}`);
 }
-n.on("window-all-closed", () => {
-  process.platform !== "darwin" && (v(), n.quit(), e = null);
+t.on("window-all-closed", () => {
+  process.platform !== "darwin" && (E(), t.quit(), e = null);
 });
-n.on("before-quit", () => {
-  v();
+t.on("before-quit", () => {
+  E();
 });
-n.on("activate", () => {
-  m.getAllWindows().length === 0 && x();
+t.on("activate", () => {
+  f.getAllWindows().length === 0 && S();
 });
-n.whenReady().then(async () => {
+t.whenReady().then(async () => {
   try {
-    n.setAppUserModelId(y), await B(), x();
-  } catch (o) {
-    j(o instanceof Error ? o.message : String(o));
+    t.setName(R), t.setAppUserModelId(A), t.setPath("userData", o.join(t.getPath("appData"), T)), C(), await L(), S();
+  } catch (a) {
+    U(a instanceof Error ? a.message : String(a));
   }
 });

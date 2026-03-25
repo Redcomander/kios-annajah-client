@@ -50,12 +50,12 @@ export const LoginPage = () => {
             </div>
             <h1 className="text-3xl font-extrabold mb-3 tracking-tight">{APP_DISPLAY_NAME}</h1>
             <p className="text-gray-400 text-lg font-medium leading-relaxed">
-              {MONITORING_MODE ? 'Monitoring bisnis online untuk stok, laporan, transaksi, dan staff.' : 'Platform manajemen toko modern untuk bisnis anda.'}
+              {MONITORING_MODE ? 'Dashboard pemantauan stok, laporan, transaksi, dan staff.' : 'Aplikasi kasir offline untuk transaksi, stok, dan laporan harian.'}
             </p>
           </div>
           
           <div className="text-sm text-gray-500 font-medium relative z-10">
-            &copy; 2024 {MONITORING_MODE ? 'Kios Annajah Monitoring' : 'Kasir System v1.2'}
+            &copy; 2024 {MONITORING_MODE ? 'Kios An-Najah Monitoring' : 'Kios An-Najah Kasir'}
           </div>
 
           {/* Abstract Shapes */}
@@ -68,7 +68,7 @@ export const LoginPage = () => {
           <div className="mb-10">
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Selamat Datang 👋</h2>
             <p className="text-gray-500 font-medium">
-              {MONITORING_MODE ? 'Masuk untuk mengakses dashboard monitoring.' : 'Masuk untuk mengakses dashboard.'}
+              {MONITORING_MODE ? 'Masuk untuk mengakses dashboard monitoring.' : 'Masuk untuk mengakses aplikasi kasir offline.'}
             </p>
           </div>
 

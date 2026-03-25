@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -27,6 +27,8 @@ const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const BACKEND_PORT = process.env.APP_PORT ?? '3000'
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
 const APP_ID = 'com.kiosannajah.desktop'
+const APP_NAME = 'Kios An-Najah'
+const LEGACY_USER_DATA_NAME = 'Kios Annajah'
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -145,6 +147,7 @@ function createWindow() {
     minHeight: 760,
     autoHideMenuBar: true,
     show: false,
+    fullscreen: true,
     icon: fs.existsSync(resolveWindowIcon()) ? resolveWindowIcon() : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -153,6 +156,35 @@ function createWindow() {
 
   win.once('ready-to-show', () => {
     win?.show()
+  })
+
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!win) {
+      return
+    }
+
+    if (input.type !== 'keyDown') {
+      return
+    }
+
+    if (input.key === 'F11') {
+      event.preventDefault()
+      win.setFullScreen(!win.isFullScreen())
+      return
+    }
+
+    if (input.key === 'Escape' && win.isFullScreen()) {
+      event.preventDefault()
+      win.setFullScreen(false)
+    }
+  })
+
+  win.on('enter-full-screen', () => {
+    win?.webContents.send('desktop:fullscreen-changed', true)
+  })
+
+  win.on('leave-full-screen', () => {
+    win?.webContents.send('desktop:fullscreen-changed', false)
   })
 
   if (!app.isPackaged) {
@@ -169,6 +201,15 @@ function createWindow() {
   } else {
     win.loadFile(path.join(DIST, 'index.html'))
   }
+}
+
+function registerDesktopIpc() {
+  ipcMain.handle('desktop:is-desktop', () => true)
+  ipcMain.handle('desktop:get-fullscreen', () => win?.isFullScreen() ?? false)
+  ipcMain.handle('desktop:set-fullscreen', (_event, value: boolean) => {
+    win?.setFullScreen(Boolean(value))
+    return win?.isFullScreen() ?? false
+  })
 }
 
 function createBackendErrorWindow(errorMessage: string) {
@@ -192,7 +233,7 @@ function createBackendErrorWindow(errorMessage: string) {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Kios Annajah - Backend Startup Error</title>
+        <title>Kios An-Najah - Backend Startup Error</title>
         <style>
           body { margin: 0; background: #f3f4f6; color: #111827; font-family: Segoe UI, Tahoma, sans-serif; }
           .wrap { max-width: 760px; margin: 0 auto; padding: 24px; }
@@ -255,7 +296,10 @@ app.on('activate', () => {
 
 app.whenReady().then(async () => {
   try {
+    app.setName(APP_NAME)
     app.setAppUserModelId(APP_ID)
+    app.setPath('userData', path.join(app.getPath('appData'), LEGACY_USER_DATA_NAME))
+    registerDesktopIpc()
     await startBackend()
     createWindow()
   } catch (error) {

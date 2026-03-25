@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl } from '../config/api'
 import { printReceipt } from '../utils/receipt'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface TransactionItem {
   id: number;
@@ -26,7 +27,10 @@ interface Transaction {
 export const TransactionList = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null)
-    const { token, user } = useAuth()
+        const { token, user } = useAuth()
+        const [voidTargetId, setVoidTargetId] = useState<number | null>(null)
+        const [voidReason, setVoidReason] = useState('Void by admin')
+        const [voidError, setVoidError] = useState('')
 
     const fetchTransactions = () => {
         if (!token) return
@@ -43,11 +47,8 @@ export const TransactionList = () => {
         fetchTransactions()
   }, [token])
 
-    const handleDeleteTransaction = async (id: number) => {
+    const handleDeleteTransaction = async (id: number, reason: string) => {
         if (user?.role !== 'admin') return
-        const reason = prompt(`Alasan void/refund transaksi #${id} (opsional):`, 'Void by admin')
-        if (reason === null) return
-        if (!confirm(`Void/refund transaksi #${id}? Stok barang akan dikembalikan.`)) return
 
         try {
             const res = await fetch(buildApiUrl(`/api/transactions/${id}`), {
@@ -64,13 +65,16 @@ export const TransactionList = () => {
                     setSelectedTransaction(null)
                 }
                 fetchTransactions()
+                setVoidTargetId(null)
+                setVoidReason('Void by admin')
+                setVoidError('')
             } else {
                 const err = await res.json().catch(() => null)
-                alert(err?.error || 'Gagal melakukan void/refund transaksi.')
+                setVoidError(err?.error || 'Gagal melakukan void/refund transaksi.')
             }
         } catch (error) {
             console.error(error)
-            alert('Gagal melakukan void/refund transaksi.')
+            setVoidError('Gagal melakukan void/refund transaksi.')
         }
     }
 
@@ -156,7 +160,11 @@ export const TransactionList = () => {
                                 {user?.role === 'admin' && (
                                     <button
                                         disabled={!!t.is_voided}
-                                        onClick={() => handleDeleteTransaction(t.id)}
+                                        onClick={() => {
+                                            setVoidTargetId(t.id)
+                                            setVoidReason('Void by admin')
+                                            setVoidError('')
+                                        }}
                                         className="p-2 hover:bg-red-100 text-red-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                         title={t.is_voided ? 'Sudah void' : 'Void/Refund transaksi'}
                                     >
@@ -240,6 +248,34 @@ export const TransactionList = () => {
               </div>
           </div>
       )}
+
+            <ConfirmDialog
+                isOpen={voidTargetId !== null}
+                title={voidTargetId ? `Void/Refund transaksi #${voidTargetId}` : 'Void/Refund transaksi'}
+                message="Stok barang akan dikembalikan."
+                confirmText="Void/Refund"
+                cancelText="Batal"
+                danger
+                onCancel={() => {
+                    setVoidTargetId(null)
+                    setVoidError('')
+                }}
+                onConfirm={() => voidTargetId && handleDeleteTransaction(voidTargetId, voidReason)}
+            >
+                <label className="block text-xs font-bold text-gray-600 uppercase tracking-wide mb-2">Alasan (opsional)</label>
+                <input
+                    type="text"
+                    value={voidReason}
+                    onChange={(e) => setVoidReason(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500 outline-none"
+                    placeholder="Void by admin"
+                />
+                {voidError && (
+                    <div className="mt-3 text-xs font-bold text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        {voidError}
+                    </div>
+                )}
+            </ConfirmDialog>
     </div>
   )
 }

@@ -15,7 +15,7 @@ export interface ReceiptData {
   referenceNumber?: string
 }
 
-import { SHOP_NAME, SHOP_ADDRESS, SHOP_PHONE } from '../config/shop'
+import { SHOP_NAME, SHOP_PHONE } from '../config/shop'
 
 const formatCurrency = (value: number) => `Rp ${value.toLocaleString('id-ID')}`
 
@@ -55,7 +55,6 @@ export function printReceipt(receipt: ReceiptData) {
       <body>
         <div class="wrap">
           <h1>${SHOP_NAME}</h1>
-          ${SHOP_ADDRESS ? `<div class="muted">${SHOP_ADDRESS}</div>` : ''}
           ${SHOP_PHONE ? `<div class="muted">${SHOP_PHONE}</div>` : ''}
           <div class="muted">Struk Transaksi ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</div>
           <div class="muted">${new Date(receipt.createdAt).toLocaleString('id-ID')}</div>

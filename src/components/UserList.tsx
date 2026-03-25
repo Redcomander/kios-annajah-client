@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { PlusIcon, TrashIcon, PencilSquareIcon, ShieldCheckIcon, UserIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl } from '../config/api'
+import { ConfirmDialog } from './ConfirmDialog'
 
 interface User {
     id: number;
@@ -22,6 +23,7 @@ export const UserList = () => {
     const [role, setRole] = useState('cashier')
     const [error, setError] = useState('')
     const [loading, setLoading] = useState(false)
+    const [deletingUserId, setDeletingUserId] = useState<number | null>(null)
 
     useEffect(() => {
         if (currentUser?.role !== 'admin') return // Should be redirected by App.tsx, but double check
@@ -74,13 +76,12 @@ export const UserList = () => {
     }
 
     const handleDelete = async (id: number) => {
-        if (!confirm('Are you sure you want to delete this user?')) return
-
         await fetch(buildApiUrl(`/api/users/${id}`), {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${token}` }
         })
         fetchUsers()
+        setDeletingUserId(null)
     }
 
     const openModal = (user?: User) => {
@@ -149,7 +150,7 @@ export const UserList = () => {
                                         <button onClick={() => openModal(u)} className="p-2 hover:bg-gray-200 rounded-lg text-gray-600">
                                             <PencilSquareIcon className="h-5 w-5" />
                                         </button>
-                                        <button onClick={() => handleDelete(u.id)} className="p-2 hover:bg-red-50 rounded-lg text-red-600" disabled={u.id === currentUser?.id}>
+                                        <button onClick={() => setDeletingUserId(u.id)} className="p-2 hover:bg-red-50 rounded-lg text-red-600" disabled={u.id === currentUser?.id}>
                                             <TrashIcon className="h-5 w-5" />
                                         </button>
                                     </div>
@@ -216,6 +217,17 @@ export const UserList = () => {
                     </div>
                 </div>
             )}
+
+            <ConfirmDialog
+                isOpen={deletingUserId !== null}
+                title="Delete User"
+                message="Are you sure you want to delete this user?"
+                confirmText="Delete"
+                cancelText="Cancel"
+                danger
+                onCancel={() => setDeletingUserId(null)}
+                onConfirm={() => deletingUserId && handleDelete(deletingUserId)}
+            />
         </div>
     )
 }
