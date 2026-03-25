@@ -10,6 +10,7 @@ interface Product {
   category: string;
     barcode?: string;
   stock: number;
+    unit?: string;
   image?: string;
     nearest_expired_at?: string;
     near_expiry?: boolean;
@@ -21,6 +22,7 @@ interface CartItem {
   name: string;
   price: number;
   qty: number;
+    unit?: string;
 }
 
 interface POSPageProps {
@@ -38,6 +40,13 @@ interface POSPageProps {
 }
 
 export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, total, search, onSearchInput, onSearchSubmit, setSearch, filteredProducts }: POSPageProps) => {
+
+    const formatQty = (qty: number, unit?: string) => {
+        if (String(unit || '').toLowerCase() === 'kg') {
+            return `${qty.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 3 })} Kg`
+        }
+        return `${qty.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+    }
 
     const warningProducts = products
         .filter((product) => product.low_stock || product.near_expiry)
@@ -110,7 +119,7 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                             <button onClick={() => updateQty(item.product_id, -1)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-red-100 text-gray-600 hover:text-red-500 flex items-center justify-center transition-colors">
                                 <MinusIcon className="h-4 w-4" />
                             </button>
-                            <span className="w-6 text-center font-bold text-gray-800">{item.qty}</span>
+                            <span className="min-w-[64px] text-center font-bold text-gray-800 text-sm">{formatQty(item.qty, item.unit)}</span>
                             <button onClick={() => updateQty(item.product_id, 1)} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-green-100 text-gray-600 hover:text-green-500 flex items-center justify-center transition-colors">
                                 <PlusIcon className="h-4 w-4" />
                             </button>

@@ -89,7 +89,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         e.preventDefault()
         if (!selectedProduct || !addQty) return
 
-        const qtyToAdd = parseInt(addQty)
+        const qtyToAdd = parseFloat(addQty)
         if (isNaN(qtyToAdd) || qtyToAdd <= 0) {
             setError('Jumlah tidak valid')
             return
@@ -230,6 +230,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                                     className="w-full border-2 border-indigo-500 rounded-xl px-4 py-4 text-2xl font-bold text-center text-indigo-600 focus:ring-4 focus:ring-indigo-100 outline-none"
                                     placeholder="0"
                                     min="1"
+                                    step="0.01"
                                 />
                             </div>
 

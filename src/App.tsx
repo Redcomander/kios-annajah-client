@@ -44,6 +44,7 @@ interface CartItem {
   name: string;
   price: number;
   qty: number;
+  unit?: string;
 }
 
 interface CheckoutResult {
@@ -121,22 +122,24 @@ const ProtectedApp = () => {
 
     const addToCart = (product: any) => {
         setCart(prev => {
+      const step = String(product.unit || '').toLowerCase() === 'kg' ? 0.25 : 1
         const existing = prev.find(item => item.product_id === product.id)
         if (existing) {
             return prev.map(item => 
             item.product_id === product.id 
-            ? { ...item, qty: item.qty + 1 }
+        ? { ...item, qty: Number((item.qty + step).toFixed(3)) }
             : item
             )
         }
-        return [...prev, { product_id: product.id, name: product.name, price: product.price, qty: 1 }]
+      return [...prev, { product_id: product.id, name: product.name, price: product.price, qty: step, unit: product.unit }]
         })
     }
 
     const updateQty = (id: number, delta: number) => {
         setCart(prev => prev.map(item => {
             if (item.product_id === id) {
-            const newQty = Math.max(0, item.qty + delta)
+        const step = String(item.unit || '').toLowerCase() === 'kg' ? 0.25 : 1
+        const newQty = Math.max(0, Number((item.qty + (delta * step)).toFixed(3)))
             return { ...item, qty: newQty }
             }
             return item
