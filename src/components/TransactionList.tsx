@@ -173,7 +173,10 @@ export const TransactionList = () => {
         }
     }, [transactions])
 
-        const selectedActiveItems = selectedTransaction?.items.filter((item) => !item.is_voided) ?? []
+        const selectedActiveItems = useMemo(
+            () => selectedTransaction?.items.filter((item) => !item.is_voided) ?? [],
+            [selectedTransaction]
+        )
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col relative">

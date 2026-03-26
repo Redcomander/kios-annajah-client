@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { 
     PlusIcon, 
     MagnifyingGlassIcon, 
@@ -101,7 +101,7 @@ export const ProductList = () => {
         setDeletingProductId(null)
     }
 
-    const filteredProducts = products.filter(p => {
+    const filteredProducts = useMemo(() => products.filter(p => {
         if (search === 'low_stock_filter') return !!p.low_stock
         if (search === 'near_expiry_filter') return !!p.near_expiry
         return (
@@ -109,7 +109,7 @@ export const ProductList = () => {
             p.barcode.includes(search) ||
             p.category.toLowerCase().includes(search.toLowerCase())
         )
-    })
+    }), [search, products])
 
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">

@@ -273,6 +273,15 @@ export const DigitalTransactionRecorder = () => {
     }
   }
 
+  const rowSummary = useMemo(() => {
+    const successRows = rows.filter(r => r.status === 'success')
+    return {
+      count: rows.length,
+      totalSell: successRows.reduce((s, r) => s + r.sell_price, 0),
+      totalProfit: successRows.reduce((s, r) => s + r.profit, 0),
+    }
+  }, [rows])
+
   return (
     <div className="h-full overflow-auto p-5 bg-gray-50">
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 h-full">
@@ -461,18 +470,13 @@ export const DigitalTransactionRecorder = () => {
           </div>
 
           {/* Summary totals */}
-          {rows.length > 0 && (() => {
-            const successRows = rows.filter(r => r.status === 'success')
-            const totalSell   = successRows.reduce((s, r) => s + r.sell_price, 0)
-            const totalProfit = successRows.reduce((s, r) => s + r.profit, 0)
-            return (
-              <div className="flex gap-4 text-xs font-bold">
-                <span className="text-gray-500">{rows.length} transaksi</span>
-                <span className="text-gray-700">Omzet (success): <span className="text-indigo-700">Rp {totalSell.toLocaleString('id-ID')}</span></span>
-                <span className="text-gray-700">Laba (success): <span className="text-emerald-700">Rp {totalProfit.toLocaleString('id-ID')}</span></span>
-              </div>
-            )
-          })()}
+          {rowSummary.count > 0 && (
+            <div className="flex gap-4 text-xs font-bold">
+              <span className="text-gray-500">{rowSummary.count} transaksi</span>
+              <span className="text-gray-700">Omzet (success): <span className="text-indigo-700">Rp {rowSummary.totalSell.toLocaleString('id-ID')}</span></span>
+              <span className="text-gray-700">Laba (success): <span className="text-emerald-700">Rp {rowSummary.totalProfit.toLocaleString('id-ID')}</span></span>
+            </div>
+          )}
 
           <div className="flex-1 overflow-auto">
             <table className="w-full text-sm">

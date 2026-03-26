@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { CalendarDaysIcon, BanknotesIcon, ArrowTrendingUpIcon, ArrowPathIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
@@ -131,10 +131,13 @@ export const Reports = () => {
             .finally(() => setSummaryLoading(false))
     }, [summaryDate, token])
 
-    const safeData = Array.isArray(data) ? data : []
-    const totalSales = safeData.reduce((acc, curr) => acc + (curr.total || 0), 0)
-    const averageSales = safeData.length > 0 ? totalSales / safeData.length : 0
-    const bestDay = safeData.reduce((prev, current) => ((prev.total || 0) > (current.total || 0)) ? prev : current, {total: 0, date: '-'})
+    const { safeData, totalSales, averageSales, bestDay } = useMemo(() => {
+        const safeData = Array.isArray(data) ? data : []
+        const totalSales = safeData.reduce((acc, curr) => acc + (curr.total || 0), 0)
+        const averageSales = safeData.length > 0 ? totalSales / safeData.length : 0
+        const bestDay = safeData.reduce((prev, current) => ((prev.total || 0) > (current.total || 0)) ? prev : current, {total: 0, date: '-'})
+        return { safeData, totalSales, averageSales, bestDay }
+    }, [data])
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col overflow-y-auto">
@@ -297,7 +300,7 @@ export const Reports = () => {
                 <h3 className="font-bold text-gray-700 mb-4">Grafik Penjualan</h3>
                 {loading && <div className="text-sm font-medium text-gray-400 mb-3">Memuat laporan...</div>}
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data}>
+                    <BarChart data={safeData}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                         <XAxis 
                             dataKey="date" 

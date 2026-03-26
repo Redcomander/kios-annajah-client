@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { type ReceiptData } from './utils/receipt'
 import { ProductList } from './components/ProductList'
 import { TransactionList } from './components/TransactionList'
@@ -86,14 +86,14 @@ const ProtectedApp = () => {
     const [isFullscreen, setIsFullscreen] = useState(false)
 
     // Fetch Products from Go Backend — always, so low-stock badge stays live
-    const fetchProducts = () => {
+    const fetchProducts = useCallback(() => {
       fetch(buildApiUrl('/api/products'), {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(res => res.json())
         .then(data => { if (Array.isArray(data)) setProducts(data) })
         .catch(err => console.error('Failed to fetch products:', err))
-    }
+    }, [token])
 
     useEffect(() => {
       fetchProducts()
@@ -103,7 +103,7 @@ const ProtectedApp = () => {
       if (activeTab === 'pos' || activeTab === 'products') fetchProducts()
     }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    const lowStockCount = products.filter(p => p.low_stock).length
+    const lowStockCount = useMemo(() => products.filter(p => p.low_stock).length, [products])
 
     useEffect(() => {
       if (!ENABLE_POS && activeTab === 'pos') {
