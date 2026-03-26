@@ -68,7 +68,6 @@
       "uninstallerIcon": "build/icons/icon.ico"
     }
   },
-  "dependencies": {},
   "devDependencies": {
     "@heroicons/react": "^2.2.0",
     "@types/react": "^18.2.56",
@@ -81,12 +80,13 @@
     "electron-builder": "^24.13.3",
     "lucide-react": "^0.344.0",
     "postcss": "^8.4.35",
+    "rcedit": "^4.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "recharts": "^3.7.0",
-    "rcedit": "^4.0.1",
     "tailwind-merge": "^2.2.1",
     "tailwindcss": "^3.4.1",
+    "tesseract.js": "^7.0.0",
     "typescript": "^5.3.3",
     "vite": "^5.1.4",
     "vite-plugin-electron": "^0.28.2",

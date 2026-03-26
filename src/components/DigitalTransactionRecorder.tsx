@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ClipboardDocumentIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon } from '@heroicons/react/24/solid'
+import { ClipboardDocumentIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon, PhotoIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl } from '../config/api'
 import { downloadApiFile } from '../utils/download'
@@ -51,13 +51,8 @@ const initialForm: FormState = {
   notes: '',
 }
 
-const parseNumberFromText = (text: string): number | null => {
-  const match = text.match(/(?:rp\.?\s*)?([\d.,]{4,})/i)
-  if (!match?.[1]) {
-    return null
-  }
-
-  const cleaned = match[1].replace(/\./g, '').replace(',', '.')
+const parseCurrencyValue = (valueText: string): number | null => {
+  const cleaned = valueText.replace(/[^\d.,]/g, '').replace(/\./g, '').replace(',', '.')
   const value = Number(cleaned)
   if (Number.isNaN(value)) {
     return null
@@ -66,11 +61,58 @@ const parseNumberFromText = (text: string): number | null => {
   return value
 }
 
+const parseNumberFromText = (text: string): number | null => {
+  const match = text.match(/(?:rp\.?\s*)?([\d.,]{4,})/i)
+  if (!match?.[1]) {
+    return null
+  }
+
+  return parseCurrencyValue(match[1])
+}
+
+const parseReceiptAmount = (text: string): number | null => {
+  const totalMatch = text.match(/total[^\d]{0,12}(?:rp\.?\s*)?([\d.,]{3,})/i)
+  if (totalMatch?.[1]) {
+    return parseCurrencyValue(totalMatch[1])
+  }
+
+  return parseNumberFromText(text)
+}
+
+const detectProvider = (text: string): string => {
+  const lower = text.toLowerCase()
+  const providers = ['telkomsel', 'indosat', 'tri', 'xl', 'axis', 'smartfren', 'by.u', 'dana', 'ovo', 'gopay', 'linkaja']
+  const hit = providers.find((provider) => lower.includes(provider))
+  return hit ?? ''
+}
+
+const parseProductName = (text: string): string => {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  const mainProductLine = lines.find((line) => /\b(pulsa|paket\s*data|kuota|dana|ovo|gopay|linkaja|token|pln)\b/i.test(line) && /\d{3,}/.test(line))
+  if (mainProductLine) {
+    return mainProductLine
+  }
+
+  const serialIndex = lines.findIndex((line) => /^serial\b/i.test(line))
+  if (serialIndex > 0 && lines[serialIndex - 1]) {
+    return lines[serialIndex - 1]
+  }
+
+  return ''
+}
+
 const parseMitraText = (text: string): Partial<FormState> => {
   const lower = text.toLowerCase()
   const phoneMatch = text.match(/\b08\d{8,13}\b/)
   const refMatch = text.match(/(?:ref|trx|transaksi|id)\s*[:#-]?\s*([a-z0-9-]{5,})/i)
-  const amount = parseNumberFromText(text)
+  const serialMatch = text.match(/serial\s*[:#-]?\s*([a-z0-9-]{6,})/i)
+  const amount = parseReceiptAmount(text)
+  const productName = parseProductName(text)
+  const provider = detectProvider(text)
 
   const status: DigitalStatus = lower.includes('berhasil') || lower.includes('sukses')
     ? 'success'
@@ -84,8 +126,10 @@ const parseMitraText = (text: string): Partial<FormState> => {
 
   return {
     transaction_type: transactionType,
+    provider,
     customer_number: phoneMatch?.[0] ?? '',
-    mitra_ref: refMatch?.[1]?.toUpperCase() ?? '',
+    product_name: productName,
+    mitra_ref: (serialMatch?.[1] ?? refMatch?.[1] ?? '').toUpperCase(),
     sell_price: amount != null ? String(amount) : '',
     status,
     source: 'assisted',
@@ -103,6 +147,7 @@ export const DigitalTransactionRecorder = () => {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   // Filters
@@ -225,6 +270,70 @@ export const DigitalTransactionRecorder = () => {
     setError('')
   }
 
+  const applyImageOCR = async (imageFile: File) => {
+    setOcrLoading(true)
+    setError('')
+
+    try {
+      const { default: Tesseract } = await import('tesseract.js')
+      const { data } = await Tesseract.recognize(imageFile, 'eng')
+      const text = (data?.text ?? '').trim()
+
+      if (!text) {
+        setError('Teks pada gambar tidak terbaca. Coba gambar yang lebih jelas.')
+        return
+      }
+
+      const parsed = parseMitraText(text)
+      setForm((prev) => ({ ...prev, ...parsed }))
+      setRawPaste(text)
+    } catch (caughtError) {
+      console.error(caughtError)
+      setError('Gagal membaca gambar bukti transaksi.')
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  const handleImageUpload: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await applyImageOCR(file)
+    event.target.value = ''
+  }
+
+  const handleClipboardImage = async () => {
+    if (!navigator.clipboard?.read) {
+      setError('Clipboard gambar belum didukung di perangkat ini.')
+      return
+    }
+
+    setError('')
+    try {
+      const clipboardItems = await navigator.clipboard.read()
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((type) => type.startsWith('image/'))
+        if (!imageType) {
+          continue
+        }
+
+        const blob = await item.getType(imageType)
+        const ext = imageType.split('/')[1] || 'png'
+        const file = new File([blob], `clipboard-receipt.${ext}`, { type: imageType })
+        await applyImageOCR(file)
+        return
+      }
+
+      setError('Tidak ada gambar pada clipboard.')
+    } catch (caughtError) {
+      console.error(caughtError)
+      setError('Gagal membaca gambar dari clipboard.')
+    }
+  }
+
   const updateStatus = async (id: number, status: DigitalStatus) => {
     if (!token) return
 
@@ -301,10 +410,26 @@ export const DigitalTransactionRecorder = () => {
             />
             <button
               onClick={applyPastedText}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+              disabled={ocrLoading}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
             >
               <ClipboardDocumentIcon className="h-4 w-4" /> Parse Teks
             </button>
+
+            <label className="w-full border border-indigo-200 bg-white hover:bg-indigo-100 text-indigo-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors">
+              <PhotoIcon className="h-4 w-4" /> {ocrLoading ? 'Memproses Gambar...' : 'Upload Bukti (Gambar)'}
+              <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={ocrLoading} />
+            </label>
+
+            <button
+              onClick={handleClipboardImage}
+              disabled={ocrLoading}
+              className="w-full border border-indigo-200 bg-white hover:bg-indigo-100 disabled:opacity-60 text-indigo-700 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
+            >
+              <ClipboardDocumentIcon className="h-4 w-4" /> Ambil Gambar dari Clipboard
+            </button>
+
+            <p className="text-[11px] text-indigo-700/80">Bisa pakai screenshot struk Mitra Bukalapak seperti contoh yang kamu kirim.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
