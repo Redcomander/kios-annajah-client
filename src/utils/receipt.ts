@@ -19,24 +19,26 @@ import { SHOP_NAME, SHOP_PHONE } from '../config/shop'
 
 const formatCurrency = (value: number) => `Rp ${value.toLocaleString('id-ID')}`
 
-export function printReceipt(receipt: ReceiptData) {
-  const printWindow = window.open('', '_blank', 'width=420,height=720')
-  if (!printWindow) {
-    return false
-  }
+const escapeHtml = (value: string) => value
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
 
+export function renderReceiptHtml(receipt: ReceiptData) {
   const itemsHtml = receipt.items
     .map(
       (item) => `
         <tr>
-          <td style="padding:6px 0; vertical-align:top;">${item.name}<br><span style="color:#6b7280; font-size:12px;">${item.qty} x ${formatCurrency(item.price)}</span></td>
+          <td style="padding:6px 0; vertical-align:top;">${escapeHtml(item.name)}<br><span style="color:#6b7280; font-size:12px;">${item.qty} x ${formatCurrency(item.price)}</span></td>
           <td style="padding:6px 0; text-align:right; vertical-align:top;">${formatCurrency(item.qty * item.price)}</td>
         </tr>
       `,
     )
     .join('')
 
-  printWindow.document.write(`
+  return `
     <!doctype html>
     <html>
       <head>
@@ -54,11 +56,11 @@ export function printReceipt(receipt: ReceiptData) {
       </head>
       <body>
         <div class="wrap">
-          <h1>${SHOP_NAME}</h1>
-          ${SHOP_PHONE ? `<div class="muted">${SHOP_PHONE}</div>` : ''}
+          <h1>${escapeHtml(SHOP_NAME)}</h1>
+          ${SHOP_PHONE ? `<div class="muted">${escapeHtml(SHOP_PHONE)}</div>` : ''}
           <div class="muted">Struk Transaksi ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</div>
           <div class="muted">${new Date(receipt.createdAt).toLocaleString('id-ID')}</div>
-          <div class="muted">Metode: ${receipt.paymentMethod.toUpperCase()}${receipt.referenceNumber ? ` · Ref: ${receipt.referenceNumber}` : ''}</div>
+          <div class="muted">Metode: ${escapeHtml(receipt.paymentMethod.toUpperCase())}${receipt.referenceNumber ? ` · Ref: ${escapeHtml(receipt.referenceNumber)}` : ''}</div>
           <div class="divider"></div>
           <table>
             <tbody>
@@ -86,7 +88,28 @@ export function printReceipt(receipt: ReceiptData) {
         </div>
       </body>
     </html>
-  `)
+  `
+}
+
+export async function printReceipt(receipt: ReceiptData) {
+  const html = renderReceiptHtml(receipt)
+
+  if (window.desktopApp?.printHTML) {
+    try {
+      return await window.desktopApp.printHTML({
+        html,
+        title: `Receipt ${receipt.transactionId ? `#${receipt.transactionId}` : ''}`,
+      })
+    } catch (error) {
+      console.error('Desktop print failed, falling back to browser print.', error)
+    }
+  }
+
+  const printWindow = window.open('', '_blank', 'width=420,height=720')
+  if (!printWindow) {
+    return false
+  }
+  printWindow.document.write(html)
   printWindow.document.close()
   printWindow.focus()
   printWindow.print()

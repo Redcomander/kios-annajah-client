@@ -1,5 +1,19 @@
 import { ipcRenderer, contextBridge } from 'electron'
 
+type PrinterSettings = {
+  defaultPrinterName: string
+  autoPrintReceipts: boolean
+  silentPrint: boolean
+}
+
+type PrinterSummary = {
+  name: string
+  displayName: string
+  description: string
+  status: number
+  isDefault: boolean
+}
+
 // --------- Expose some API to the Renderer process ---------
 contextBridge.exposeInMainWorld('ipcRenderer', {
   on(...args: Parameters<typeof ipcRenderer.on>) {
@@ -32,6 +46,18 @@ contextBridge.exposeInMainWorld('desktopApp', {
   },
   setFullscreen(value: boolean) {
     return ipcRenderer.invoke('desktop:set-fullscreen', value)
+  },
+  printHTML(payload: { html: string; title?: string }) {
+    return ipcRenderer.invoke('desktop:print-html', payload)
+  },
+  listPrinters() {
+    return ipcRenderer.invoke('desktop:list-printers') as Promise<PrinterSummary[]>
+  },
+  getPrinterSettings() {
+    return ipcRenderer.invoke('desktop:get-printer-settings') as Promise<PrinterSettings>
+  },
+  savePrinterSettings(settings: Partial<PrinterSettings>) {
+    return ipcRenderer.invoke('desktop:save-printer-settings', settings) as Promise<PrinterSettings>
   },
   onFullscreenChanged(listener: (isFullscreen: boolean) => void) {
     const handler = (_event: Electron.IpcRendererEvent, value: boolean) => listener(value)

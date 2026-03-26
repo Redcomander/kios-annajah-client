@@ -62,6 +62,33 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
         ok: false,
         message: '',
     })
+    const [autoPrintReceipts, setAutoPrintReceipts] = useState(false)
+    const [autoPrintedReceiptKey, setAutoPrintedReceiptKey] = useState('')
+
+    useEffect(() => {
+        let active = true
+
+        const loadPrinterSettings = async () => {
+            if (!window.desktopApp?.getPrinterSettings) {
+                return
+            }
+
+            try {
+                const settings = await window.desktopApp.getPrinterSettings()
+                if (active) {
+                    setAutoPrintReceipts(settings.autoPrintReceipts)
+                }
+            } catch (error) {
+                console.error('Failed to load printer settings', error)
+            }
+        }
+
+        void loadPrinterSettings()
+
+        return () => {
+            active = false
+        }
+    }, [])
 
     const onConfirmCheckout = async () => {
         setIsProcessing(true)
@@ -86,6 +113,20 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
     }, [cart.length])
+
+    useEffect(() => {
+        if (!autoPrintReceipts || !resultModal.open || !resultModal.ok || !resultModal.receipt) {
+            return
+        }
+
+        const receiptKey = `${resultModal.receipt.transactionId ?? 'manual'}:${resultModal.receipt.createdAt}`
+        if (autoPrintedReceiptKey === receiptKey) {
+            return
+        }
+
+        setAutoPrintedReceiptKey(receiptKey)
+        void printReceipt(resultModal.receipt)
+    }, [autoPrintReceipts, autoPrintedReceiptKey, resultModal])
 
     return (
         <>
@@ -308,7 +349,7 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                     <div className="flex justify-end gap-3">
                         {resultModal.ok && resultModal.receipt && (
                             <button
-                                onClick={() => printReceipt(resultModal.receipt as ReceiptData)}
+                                onClick={() => void printReceipt(resultModal.receipt as ReceiptData)}
                                 className="px-4 py-2.5 rounded-xl border border-gray-200 text-gray-700 font-semibold hover:bg-gray-50"
                             >
                                 Print Receipt

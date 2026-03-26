@@ -215,6 +215,7 @@ export const ProductList = () => {
                             <th className="px-6 py-4">Kategori</th>
                             <th className="px-6 py-4 text-right">Harga Beli</th>
                             <th className="px-6 py-4 text-right">Harga Jual</th>
+                            <th className="px-6 py-4 text-right">Margin</th>
                             <th className="px-6 py-4 text-center">Stok</th>
                             <th className="px-6 py-4 text-right rounded-tr-xl">Aksi</th>
                         </tr>
@@ -245,6 +246,19 @@ export const ProductList = () => {
                                 </td>
                                 <td className="px-6 py-3 text-right font-bold text-gray-700">
                                     Rp {product.price.toLocaleString('id-ID')}
+                                </td>
+                                <td className="px-6 py-3 text-right">
+                                    {(() => {
+                                        const margin = product.price - product.cost_price
+                                        const pct = product.price > 0 ? (margin / product.price) * 100 : 0
+                                        const color = pct >= 20 ? 'text-emerald-700 bg-emerald-50' : pct >= 8 ? 'text-amber-700 bg-amber-50' : 'text-red-700 bg-red-50'
+                                        return (
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                <span className="font-semibold text-gray-700">Rp {margin.toLocaleString('id-ID')}</span>
+                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${color}`}>{pct.toFixed(1)}%</span>
+                                            </div>
+                                        )
+                                    })()}
                                 </td>
                                 <td className="px-6 py-3 text-center">
                                     <div className={`font-bold inline-flex items-center gap-1 ${product.stock <= 10 ? 'text-red-500' : 'text-green-600'}`}>

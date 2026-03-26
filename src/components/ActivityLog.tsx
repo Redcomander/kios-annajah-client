@@ -21,10 +21,16 @@ interface LogsResponse {
 }
 
 const ACTION_META: Record<string, { label: string; color: string }> = {
-  tambah_produk: { label: 'Tambah Produk', color: 'bg-green-100 text-green-800' },
-  edit_produk:   { label: 'Edit Produk',   color: 'bg-blue-100 text-blue-800' },
-  hapus_produk:  { label: 'Hapus Produk',  color: 'bg-red-100 text-red-800' },
-  tambah_stok:   { label: 'Tambah Stok',   color: 'bg-yellow-100 text-yellow-800' },
+  tambah_produk:           { label: 'Tambah Produk',    color: 'bg-green-100 text-green-800' },
+  edit_produk:             { label: 'Edit Produk',      color: 'bg-blue-100 text-blue-800' },
+  hapus_produk:            { label: 'Hapus Produk',     color: 'bg-red-100 text-red-800' },
+  tambah_stok:             { label: 'Tambah Stok',      color: 'bg-yellow-100 text-yellow-800' },
+  checkout:                { label: 'Checkout',         color: 'bg-violet-100 text-violet-800' },
+  void_transaksi:          { label: 'Void Transaksi',   color: 'bg-rose-100 text-rose-800' },
+  refund_transaksi:        { label: 'Refund Transaksi', color: 'bg-fuchsia-100 text-fuchsia-800' },
+  void_item_transaksi:     { label: 'Void Item',        color: 'bg-orange-100 text-orange-800' },
+  catat_transaksi_digital: { label: 'Catat Pulsa/Data', color: 'bg-cyan-100 text-cyan-800' },
+  update_transaksi_digital:{ label: 'Update Pulsa/Data',color: 'bg-sky-100 text-sky-800' },
 }
 
 const ActionBadge = ({ action }: { action: string }) => {

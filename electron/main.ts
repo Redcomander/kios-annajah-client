@@ -30,6 +30,26 @@ const APP_ID = 'com.kiosannajah.desktop'
 const APP_NAME = 'Kios An-Najah'
 const LEGACY_USER_DATA_NAME = 'Kios Annajah'
 
+type PrinterSettings = {
+  defaultPrinterName: string
+  autoPrintReceipts: boolean
+  silentPrint: boolean
+}
+
+type PrinterSummary = {
+  name: string
+  displayName: string
+  description: string
+  status: number
+  isDefault: boolean
+}
+
+const defaultPrinterSettings: PrinterSettings = {
+  defaultPrinterName: '',
+  autoPrintReceipts: false,
+  silentPrint: false,
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -87,6 +107,56 @@ function resolveWindowIcon() {
   return path.resolve(__dirname, '../build/icons/icon.ico')
 }
 
+function resolvePrinterSettingsPath() {
+  return path.join(app.getPath('userData'), 'printer-settings.json')
+}
+
+function readPrinterSettings(): PrinterSettings {
+  const settingsPath = resolvePrinterSettingsPath()
+
+  try {
+    if (!fs.existsSync(settingsPath)) {
+      return { ...defaultPrinterSettings }
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Partial<PrinterSettings>
+    return {
+      defaultPrinterName: typeof parsed.defaultPrinterName === 'string' ? parsed.defaultPrinterName : '',
+      autoPrintReceipts: Boolean(parsed.autoPrintReceipts),
+      silentPrint: Boolean(parsed.silentPrint),
+    }
+  } catch (error) {
+    console.error('[desktop] failed to read printer settings', error)
+    return { ...defaultPrinterSettings }
+  }
+}
+
+function writePrinterSettings(partial: Partial<PrinterSettings>) {
+  const nextSettings: PrinterSettings = {
+    ...readPrinterSettings(),
+    ...partial,
+  }
+
+  fs.mkdirSync(path.dirname(resolvePrinterSettingsPath()), { recursive: true })
+  fs.writeFileSync(resolvePrinterSettingsPath(), JSON.stringify(nextSettings, null, 2), 'utf8')
+  return nextSettings
+}
+
+async function listPrinters() {
+  if (!win) {
+    return [] as PrinterSummary[]
+  }
+
+  const printers = await win.webContents.getPrintersAsync()
+  return printers.map((printer) => ({
+    name: printer.name,
+    displayName: printer.displayName,
+    description: printer.description,
+    status: printer.status,
+    isDefault: printer.isDefault,
+  }))
+}
+
 async function startBackend() {
   if (await isBackendReady()) {
     return
@@ -129,6 +199,49 @@ async function startBackend() {
   })
 
   await waitForBackend()
+}
+
+async function printHTML(payload: { html: string; title?: string }) {
+	const printerSettings = readPrinterSettings()
+  const printWindow = new BrowserWindow({
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      sandbox: true,
+    },
+  })
+
+  try {
+    if (payload.title) {
+      printWindow.setTitle(payload.title)
+    }
+
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(payload.html)}`)
+
+    return await new Promise<boolean>((resolve, reject) => {
+      printWindow.webContents.print(
+        {
+          printBackground: true,
+          silent: printerSettings.silentPrint,
+          deviceName: printerSettings.defaultPrinterName || undefined,
+        },
+        (success, failureReason) => {
+          printWindow.close()
+          if (!success) {
+            reject(new Error(failureReason || 'Print canceled'))
+            return
+          }
+
+          resolve(true)
+        },
+      )
+    })
+  } catch (error) {
+    if (!printWindow.isDestroyed()) {
+      printWindow.close()
+    }
+    throw error
+  }
 }
 
 function stopBackend() {
@@ -210,6 +323,10 @@ function registerDesktopIpc() {
     win?.setFullScreen(Boolean(value))
     return win?.isFullScreen() ?? false
   })
+	ipcMain.handle('desktop:print-html', async (_event, payload: { html: string; title?: string }) => printHTML(payload))
+	ipcMain.handle('desktop:list-printers', async () => listPrinters())
+	ipcMain.handle('desktop:get-printer-settings', () => readPrinterSettings())
+	ipcMain.handle('desktop:save-printer-settings', (_event, settings: Partial<PrinterSettings>) => writePrinterSettings(settings))
 }
 
 function createBackendErrorWindow(errorMessage: string) {

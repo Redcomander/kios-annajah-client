@@ -7,6 +7,7 @@ import { POSPage } from './components/POSPage'
 import { UserList } from './components/UserList'
 import { SettingsPage } from './components/SettingsPage'
 import { ActivityLog } from './components/ActivityLog'
+import { DigitalTransactionRecorder } from './components/DigitalTransactionRecorder'
 import { 
   Squares2X2Icon, 
   ArchiveBoxIcon, 
@@ -15,7 +16,8 @@ import {
   UsersIcon, 
   Cog6ToothIcon, 
   ArrowLeftOnRectangleIcon,
-  ClipboardDocumentListIcon
+  ClipboardDocumentListIcon,
+  DevicePhoneMobileIcon
 } from '@heroicons/react/24/solid'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LoginPage } from './pages/LoginPage'
@@ -54,15 +56,20 @@ interface CheckoutResult {
   receipt?: ReceiptData;
 }
 
-const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string }) => (
+const NavButton = ({ active, onClick, icon, label, badge }: { active: boolean, onClick: () => void, icon: React.ReactNode, label: string, badge?: number }) => (
   <button 
     onClick={onClick} 
-    className={`w-full flex flex-col items-center justify-center p-3.5 rounded-2xl transition-all duration-200 group ${
+    className={`relative w-full flex flex-col items-center justify-center p-3.5 rounded-2xl transition-all duration-200 group ${
       active 
         ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-105' 
         : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
     }`}
   >
+    {badge != null && badge > 0 && (
+      <span className="absolute top-2 right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-extrabold rounded-full flex items-center justify-center leading-none">
+        {badge > 99 ? '99+' : badge}
+      </span>
+    )}
     <div className={`transition-transform duration-200 ${active ? 'scale-110' : 'group-hover:scale-110'}`}>{icon}</div>
     <span className={`text-[10px] mt-1.5 font-bold tracking-wide ${active ? 'text-indigo-100' : ''}`}>{label}</span>
   </button>
@@ -78,21 +85,25 @@ const ProtectedApp = () => {
     const [isDesktop, setIsDesktop] = useState(false)
     const [isFullscreen, setIsFullscreen] = useState(false)
 
-    // Fetch Products from Go Backend
+    // Fetch Products from Go Backend — always, so low-stock badge stays live
+    const fetchProducts = () => {
+      fetch(buildApiUrl('/api/products'), {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(data => { if (Array.isArray(data)) setProducts(data) })
+        .catch(err => console.error('Failed to fetch products:', err))
+    }
+
     useEffect(() => {
-        if (activeTab === 'pos' || activeTab === 'products') {
-          fetch(buildApiUrl('/api/products'), {
-                headers: { 'Authorization': `Bearer ${token}` }
-            })
-                .then(res => res.json())
-                .then(data => {
-                    if (Array.isArray(data)) {
-                        setProducts(data)
-                    }
-                })
-                .catch(err => console.error("Failed to fetch products:", err))
-        }
-    }, [activeTab, token]) 
+      fetchProducts()
+    }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+      if (activeTab === 'pos' || activeTab === 'products') fetchProducts()
+    }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const lowStockCount = products.filter(p => p.low_stock).length
 
     useEffect(() => {
       if (!ENABLE_POS && activeTab === 'pos') {
@@ -285,7 +296,7 @@ const ProtectedApp = () => {
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-gray-900 overflow-hidden selection:bg-indigo-100">
       {/* Sidebar */}
-      <aside className="w-24 bg-white shadow-2xl flex flex-col items-center py-6 z-20 border-r border-gray-100">
+      <aside className="w-24 bg-white shadow-2xl flex flex-col items-center py-6 z-20 border-r border-gray-100 min-h-0">
         <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100 p-1.5 mb-3 shadow-lg shadow-indigo-100 transform rotate-3 hover:rotate-0 transition-all duration-300">
           <img src={MONITORING_MODE ? logoMonitoring : logoKasir} alt="App Logo" className="w-full h-full object-contain" />
         </div>
@@ -293,10 +304,11 @@ const ProtectedApp = () => {
           {APP_SHORT_NAME}
         </div>
         
-        <nav className="flex-1 flex flex-col gap-4 w-full px-3">
+        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 w-full px-3 pb-3">
           {ENABLE_POS && <NavButton active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} icon={<Squares2X2Icon className="h-6 w-6" />} label="POS" />}
-          <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<ArchiveBoxIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Stok' : 'Produk'} />
+          <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<ArchiveBoxIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Stok' : 'Produk'} badge={lowStockCount} />
           <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Transaksi' : 'Riwayat'} />
+          <NavButton active={activeTab === 'digital'} onClick={() => setActiveTab('digital')} icon={<DevicePhoneMobileIcon className="h-6 w-6" />} label="Pulsa/Data" />
           <NavButton active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={<ChartBarIcon className="h-6 w-6" />} label="Laporan" />
           
           {/* Admin Only Tab */}
@@ -337,6 +349,8 @@ const ProtectedApp = () => {
                           ? (MONITORING_MODE ? 'Monitoring Produk & Stok' : 'Produk & Stok')
                           : activeTab === 'history'
                             ? (MONITORING_MODE ? 'Monitoring Transaksi' : 'Riwayat Transaksi')
+                            : activeTab === 'digital'
+                              ? 'Pencatatan Pulsa & Paket Data'
                             : activeTab === 'reports'
                               ? (MONITORING_MODE ? 'Monitoring Laporan' : 'Laporan Penjualan')
                               : activeTab === 'activity'
@@ -393,6 +407,7 @@ const ProtectedApp = () => {
            )}
            {activeTab === 'products' && <ProductList />}
            {activeTab === 'history' && <TransactionList />}
+           {activeTab === 'digital' && <DigitalTransactionRecorder />}
            {activeTab === 'reports' && <Reports />}
            {activeTab === 'users' && user?.role === 'admin' && <UserList />}
            {activeTab === 'activity' && user?.role === 'admin' && <ActivityLog />}
