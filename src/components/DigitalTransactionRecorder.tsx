@@ -1,12 +1,39 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ClipboardDocumentIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon, PhotoIcon } from '@heroicons/react/24/solid'
+import { ClipboardDocumentIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon, PhotoIcon, TrashIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
-import { buildApiUrl } from '../config/api'
+import { buildApiUrl, buildAssetUrl } from '../config/api'
 import { downloadApiFile } from '../utils/download'
 
 type DigitalStatus = 'pending' | 'success' | 'failed'
 type DigitalType = 'pulsa' | 'paket_data'
 type InputSource = 'manual' | 'assisted'
+
+const DEFAULT_PROVIDER_OPTIONS = [
+  'Telkomsel',
+  'Indosat',
+  'Tri',
+  'XL',
+  'Axis',
+  'Smartfren',
+  'By.U',
+  'DANA',
+  'OVO',
+  'GoPay',
+  'LinkAja',
+]
+
+const FAILURE_REASON_OPTIONS = [
+  { value: 'provider_timeout', label: 'Provider Timeout' },
+  { value: 'invalid_destination', label: 'Invalid Destination' },
+  { value: 'insufficient_balance', label: 'Insufficient Balance' },
+  { value: 'provider_rejected', label: 'Provider Rejected' },
+  { value: 'network_error', label: 'Network Error' },
+  { value: 'duplicate_request', label: 'Duplicate Request' },
+  { value: 'customer_cancelled', label: 'Customer Cancelled' },
+  { value: 'other', label: 'Other' },
+] as const
+
+const FAILURE_REASON_LABEL_MAP = new Map<string, string>(FAILURE_REASON_OPTIONS.map((item) => [item.value, item.label]))
 
 interface DigitalTransaction {
   id: number
@@ -16,13 +43,46 @@ interface DigitalTransaction {
   product_name: string
   buy_price: number
   sell_price: number
+  fee: number
+  admin_fee: number
+  commission: number
   profit: number
   status: DigitalStatus
   source: InputSource
   mitra_ref: string
+  failure_reason: string
+  receipt_image: string
+  ocr_text: string
+  updated_by: string
+  is_voided: boolean
+  voided_at?: string
+  void_reason?: string
   notes: string
   created_by: string
   created_at: string
+}
+
+interface ActivityTimelineItem {
+  id: number
+  action: string
+  details: string
+  username: string
+  created_at: string
+}
+
+interface DigitalTransactionDetailResponse {
+  transaction: DigitalTransaction
+  timeline: ActivityTimelineItem[]
+}
+
+interface MetaOption {
+  value: string
+  label: string
+}
+
+interface DigitalMetaResponse {
+  providers?: MetaOption[]
+  failure_reasons?: MetaOption[]
 }
 
 interface FormState {
@@ -32,9 +92,15 @@ interface FormState {
   product_name: string
   buy_price: string
   sell_price: string
+  fee: string
+  admin_fee: string
+  commission: string
   status: DigitalStatus
   source: InputSource
   mitra_ref: string
+  failure_reason: string
+  receipt_image: string
+  ocr_text: string
   notes: string
 }
 
@@ -45,10 +111,24 @@ const initialForm: FormState = {
   product_name: '',
   buy_price: '',
   sell_price: '',
+  fee: '0',
+  admin_fee: '0',
+  commission: '0',
   status: 'pending',
   source: 'manual',
   mitra_ref: '',
+  failure_reason: '',
+  receipt_image: '',
+  ocr_text: '',
   notes: '',
+}
+
+const normalizeCustomerNumber = (value: string) => {
+  const digits = value.replace(/\D/g, '')
+  if (!digits) return ''
+  if (digits.startsWith('0')) return `62${digits.slice(1)}`
+  if (digits.startsWith('8')) return `62${digits}`
+  return digits
 }
 
 const parseCurrencyValue = (valueText: string): number | null => {
@@ -81,9 +161,22 @@ const parseReceiptAmount = (text: string): number | null => {
 
 const detectProvider = (text: string): string => {
   const lower = text.toLowerCase()
-  const providers = ['telkomsel', 'indosat', 'tri', 'xl', 'axis', 'smartfren', 'by.u', 'dana', 'ovo', 'gopay', 'linkaja']
-  const hit = providers.find((provider) => lower.includes(provider))
-  return hit ?? ''
+  const providerHits: Array<{ pattern: string; value: string }> = [
+    { pattern: 'telkomsel', value: 'Telkomsel' },
+    { pattern: 'indosat', value: 'Indosat' },
+    { pattern: 'tri', value: 'Tri' },
+    { pattern: 'xl', value: 'XL' },
+    { pattern: 'axis', value: 'Axis' },
+    { pattern: 'smartfren', value: 'Smartfren' },
+    { pattern: 'by.u', value: 'By.U' },
+    { pattern: 'byu', value: 'By.U' },
+    { pattern: 'dana', value: 'DANA' },
+    { pattern: 'ovo', value: 'OVO' },
+    { pattern: 'gopay', value: 'GoPay' },
+    { pattern: 'linkaja', value: 'LinkAja' },
+  ]
+  const hit = providerHits.find((provider) => lower.includes(provider.pattern))
+  return hit?.value ?? ''
 }
 
 const parseProductName = (text: string): string => {
@@ -127,12 +220,14 @@ const parseMitraText = (text: string): Partial<FormState> => {
   return {
     transaction_type: transactionType,
     provider,
-    customer_number: phoneMatch?.[0] ?? '',
+    customer_number: normalizeCustomerNumber(phoneMatch?.[0] ?? ''),
     product_name: productName,
     mitra_ref: (serialMatch?.[1] ?? refMatch?.[1] ?? '').toUpperCase(),
     sell_price: amount != null ? String(amount) : '',
     status,
     source: 'assisted',
+    failure_reason: status === 'failed' ? 'provider_rejected' : '',
+    ocr_text: text.trim(),
     notes: text.trim(),
   }
 }
@@ -142,6 +237,8 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 export const DigitalTransactionRecorder = () => {
   const { token } = useAuth()
   const [rows, setRows] = useState<DigitalTransaction[]>([])
+  const [providerOptions, setProviderOptions] = useState<string[]>(DEFAULT_PROVIDER_OPTIONS)
+  const [failureReasonOptions, setFailureReasonOptions] = useState<MetaOption[]>([...FAILURE_REASON_OPTIONS])
   const [form, setForm] = useState<FormState>(initialForm)
   const [rawPaste, setRawPaste] = useState('')
   const [error, setError] = useState('')
@@ -156,6 +253,32 @@ export const DigitalTransactionRecorder = () => {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterProvider, setFilterProvider] = useState('')
+  const [filterMitraRef, setFilterMitraRef] = useState('')
+  const [includeVoided, setIncludeVoided] = useState(false)
+  const [selectedDetail, setSelectedDetail] = useState<DigitalTransactionDetailResponse | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState('')
+
+  const fetchMeta = useCallback(async () => {
+    if (!token) return
+
+    try {
+      const res = await fetch(buildApiUrl('/api/digital-transactions/meta'), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) return
+
+      const data = (await res.json()) as DigitalMetaResponse
+      if (Array.isArray(data.providers) && data.providers.length > 0) {
+        setProviderOptions(data.providers.map((item) => item.value))
+      }
+      if (Array.isArray(data.failure_reasons) && data.failure_reasons.length > 0) {
+        setFailureReasonOptions(data.failure_reasons)
+      }
+    } catch (caughtError) {
+      console.error(caughtError)
+    }
+  }, [token])
 
   const fetchRows = useCallback(async () => {
     if (!token) return
@@ -167,6 +290,8 @@ export const DigitalTransactionRecorder = () => {
       if (filterStatus)   params.set('status',    filterStatus)
       if (filterType)     params.set('type',      filterType)
       if (filterProvider) params.set('provider',  filterProvider)
+      if (filterMitraRef) params.set('mitra_ref', filterMitraRef)
+      if (includeVoided) params.set('include_voided', 'true')
       const res = await fetch(buildApiUrl(`/api/digital-transactions?${params}`), {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -178,25 +303,60 @@ export const DigitalTransactionRecorder = () => {
     } finally {
       setLoading(false)
     }
-  }, [token, filterDateFrom, filterDateTo, filterStatus, filterType, filterProvider])
+  }, [token, filterDateFrom, filterDateTo, filterStatus, filterType, filterProvider, filterMitraRef, includeVoided])
 
   useEffect(() => {
     void fetchRows()
   }, [fetchRows])
 
+  useEffect(() => {
+    void fetchMeta()
+  }, [fetchMeta])
+
   const estimatedProfit = useMemo(() => {
     const buy = Number(form.buy_price || 0)
     const sell = Number(form.sell_price || 0)
-    if (Number.isNaN(buy) || Number.isNaN(sell)) {
+    const fee = Number(form.fee || 0)
+    const adminFee = Number(form.admin_fee || 0)
+    const commission = Number(form.commission || 0)
+    if (Number.isNaN(buy) || Number.isNaN(sell) || Number.isNaN(fee) || Number.isNaN(adminFee) || Number.isNaN(commission)) {
       return 0
     }
-    return sell - buy
-  }, [form.buy_price, form.sell_price])
+    return sell - buy - fee - adminFee + commission
+  }, [form.buy_price, form.sell_price, form.fee, form.admin_fee, form.commission])
+
+  const uploadReceipt = async (file: File) => {
+    if (!token) {
+      throw new Error('Token tidak tersedia')
+    }
+
+    const formData = new FormData()
+    formData.append('receipt', file)
+
+    const res = await fetch(buildApiUrl('/api/digital-transactions/receipt'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok || !data?.receipt_image) {
+      throw new Error(data?.error || 'Gagal upload bukti transaksi')
+    }
+
+    return String(data.receipt_image)
+  }
 
   const saveTransaction = async () => {
     if (!token) return
 
-    if (!form.customer_number.trim()) {
+    if (!form.provider.trim()) {
+      setError('Provider wajib diisi.')
+      return
+    }
+
+    const normalizedNumber = normalizeCustomerNumber(form.customer_number)
+    if (!normalizedNumber || normalizedNumber.length < 10) {
       setError('Nomor pelanggan wajib diisi.')
       return
     }
@@ -206,19 +366,51 @@ export const DigitalTransactionRecorder = () => {
       return
     }
 
+    if (!form.mitra_ref.trim()) {
+      setError('Ref Mitra wajib diisi.')
+      return
+    }
+
+    if (!form.receipt_image.trim()) {
+      setError('Bukti transaksi wajib diupload.')
+      return
+    }
+
+    const buyPrice = Number(form.buy_price || 0)
+    const sellPrice = Number(form.sell_price || 0)
+    if (buyPrice <= 0 || sellPrice <= 0) {
+      setError('Harga modal dan harga jual wajib > 0.')
+      return
+    }
+
+    if (form.status === 'failed' && !form.failure_reason.trim()) {
+      setError('Alasan gagal wajib diisi ketika status failed.')
+      return
+    }
+    if (form.status === 'failed' && !failureReasonOptions.some((item) => item.value === form.failure_reason.trim())) {
+      setError('Kode alasan gagal tidak valid.')
+      return
+    }
+
     setSaving(true)
     setError('')
 
     try {
       const payload = {
         ...form,
-        customer_number: form.customer_number.trim(),
+        customer_number: normalizedNumber,
         provider: form.provider.trim(),
         product_name: form.product_name.trim(),
-        mitra_ref: form.mitra_ref.trim(),
+        mitra_ref: form.mitra_ref.trim().toUpperCase(),
+        failure_reason: form.status === 'failed' ? form.failure_reason.trim() : '',
+        receipt_image: form.receipt_image.trim(),
+        ocr_text: form.ocr_text.trim(),
         notes: form.notes.trim(),
-        buy_price: Number(form.buy_price || 0),
-        sell_price: Number(form.sell_price || 0),
+        buy_price: buyPrice,
+        sell_price: sellPrice,
+        fee: Number(form.fee || 0),
+        admin_fee: Number(form.admin_fee || 0),
+        commission: Number(form.commission || 0),
       }
 
       const res = await fetch(buildApiUrl('/api/digital-transactions'), {
@@ -276,6 +468,8 @@ export const DigitalTransactionRecorder = () => {
 
     try {
       const { default: Tesseract } = await import('tesseract.js')
+      const receiptImage = await uploadReceipt(imageFile)
+      setForm((prev) => ({ ...prev, receipt_image: receiptImage }))
       const { data } = await Tesseract.recognize(imageFile, 'eng')
       const text = (data?.text ?? '').trim()
 
@@ -337,6 +531,23 @@ export const DigitalTransactionRecorder = () => {
   const updateStatus = async (id: number, status: DigitalStatus) => {
     if (!token) return
 
+    let failureReason = ''
+    if (status === 'failed') {
+      const value = window.prompt(`Kode alasan gagal wajib. Pilih: ${failureReasonOptions.map((item) => item.value).join(', ')}`, 'provider_rejected')
+      if (value === null) {
+        return
+      }
+      failureReason = value.trim().toLowerCase()
+      if (!failureReason) {
+        setError('Alasan gagal wajib diisi.')
+        return
+      }
+      if (!failureReasonOptions.some((item) => item.value === failureReason)) {
+        setError('Kode alasan gagal tidak valid.')
+        return
+      }
+    }
+
     try {
       const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}/status`), {
         method: 'PATCH',
@@ -344,7 +555,7 @@ export const DigitalTransactionRecorder = () => {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, failure_reason: failureReason }),
       })
 
       if (!res.ok) {
@@ -357,6 +568,66 @@ export const DigitalTransactionRecorder = () => {
     } catch (err) {
       console.error(err)
       setError('Gagal update status.')
+    }
+  }
+
+  const openDetail = async (id: number) => {
+    if (!token) return
+
+    setDetailLoading(true)
+    setDetailError('')
+    try {
+      const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.transaction) {
+        setDetailError(data.error || 'Gagal memuat detail transaksi.')
+        return
+      }
+
+      setSelectedDetail(data as DigitalTransactionDetailResponse)
+    } catch (caughtError) {
+      console.error(caughtError)
+      setDetailError('Gagal memuat detail transaksi.')
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const voidTransaction = async (id: number) => {
+    if (!token) return
+
+    const reason = window.prompt('Alasan void (wajib):', '')
+    if (reason === null) {
+      return
+    }
+    const trimmedReason = reason.trim()
+    if (!trimmedReason) {
+      setError('Alasan void wajib diisi.')
+      return
+    }
+
+    try {
+      const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}/void`), {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ reason: trimmedReason }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError(data.error || 'Gagal void transaksi.')
+        return
+      }
+
+      await fetchRows()
+    } catch (err) {
+      console.error(err)
+      setError('Gagal void transaksi.')
     }
   }
 
@@ -373,6 +644,8 @@ export const DigitalTransactionRecorder = () => {
       if (filterStatus) params.set('status', filterStatus)
       if (filterType) params.set('type', filterType)
       if (filterProvider) params.set('provider', filterProvider)
+      if (filterMitraRef) params.set('mitra_ref', filterMitraRef)
+      if (includeVoided) params.set('include_voided', 'true')
       await downloadApiFile(`/api/exports/digital-transactions.csv?${params.toString()}`, token, `transaksi_digital_${todayISO()}.csv`)
     } catch (caughtError) {
       console.error(caughtError)
@@ -430,6 +703,7 @@ export const DigitalTransactionRecorder = () => {
             </button>
 
             <p className="text-[11px] text-indigo-700/80">Bisa pakai screenshot struk Mitra Bukalapak seperti contoh yang kamu kirim.</p>
+            <p className="text-[11px] text-emerald-700/80">{form.receipt_image ? 'Bukti transaksi sudah tersimpan.' : 'Upload bukti transaksi wajib sebelum simpan.'}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -461,15 +735,19 @@ export const DigitalTransactionRecorder = () => {
             value={form.customer_number}
             onChange={(e) => setForm((p) => ({ ...p, customer_number: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Nomor pelanggan (08xxxx)"
+            placeholder="Nomor pelanggan (akan dinormalisasi ke 62xxxx)"
           />
 
-          <input
+          <select
             value={form.provider}
             onChange={(e) => setForm((p) => ({ ...p, provider: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Provider (Telkomsel, XL, Tri, dst)"
-          />
+          >
+            <option value="">Pilih provider</option>
+            {providerOptions.map((provider) => (
+              <option key={provider} value={provider}>{provider}</option>
+            ))}
+          </select>
 
           <input
             value={form.product_name}
@@ -490,6 +768,27 @@ export const DigitalTransactionRecorder = () => {
               onChange={(e) => setForm((p) => ({ ...p, sell_price: e.target.value }))}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               placeholder="Harga jual"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              value={form.fee}
+              onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Fee"
+            />
+            <input
+              value={form.admin_fee}
+              onChange={(e) => setForm((p) => ({ ...p, admin_fee: e.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Admin fee"
+            />
+            <input
+              value={form.commission}
+              onChange={(e) => setForm((p) => ({ ...p, commission: e.target.value }))}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              placeholder="Komisi"
             />
           </div>
 
@@ -514,6 +813,25 @@ export const DigitalTransactionRecorder = () => {
               <option value="assisted">Assisted</option>
             </select>
           </div>
+
+          {form.status === 'failed' && (
+            <select
+              value={form.failure_reason}
+              onChange={(e) => setForm((p) => ({ ...p, failure_reason: e.target.value }))}
+              className="w-full rounded-lg border border-red-200 px-3 py-2 text-sm"
+            >
+              <option value="">Pilih kode alasan gagal</option>
+              {failureReasonOptions.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          )}
+
+          {form.receipt_image && (
+            <a href={buildAssetUrl(form.receipt_image)} target="_blank" rel="noreferrer" className="text-xs font-bold text-indigo-600 hover:text-indigo-800">
+              Lihat bukti transaksi yang tersimpan
+            </a>
+          )}
 
           <textarea
             value={form.notes}
@@ -584,11 +902,25 @@ export const DigitalTransactionRecorder = () => {
             </div>
             <div className="flex flex-col gap-0.5">
               <span className="text-[10px] font-bold uppercase text-gray-400">Provider</span>
-              <input type="text" value={filterProvider} onChange={e => setFilterProvider(e.target.value)}
-                placeholder="Telkomsel…"
+              <select value={filterProvider} onChange={e => setFilterProvider(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-28 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <option value="">Semua</option>
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold uppercase text-gray-400">Ref Mitra</span>
+              <input type="text" value={filterMitraRef} onChange={e => setFilterMitraRef(e.target.value)}
+                placeholder="Serial/ref..."
                 className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs w-28 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
             </div>
-            <button onClick={() => { setFilterDateFrom(todayISO()); setFilterDateTo(todayISO()); setFilterStatus(''); setFilterType(''); setFilterProvider('') }}
+            <label className="text-xs text-gray-500 flex items-center gap-1 pb-1.5">
+              <input type="checkbox" checked={includeVoided} onChange={(e) => setIncludeVoided(e.target.checked)} />
+              Tampilkan voided
+            </label>
+            <button onClick={() => { setFilterDateFrom(todayISO()); setFilterDateTo(todayISO()); setFilterStatus(''); setFilterType(''); setFilterProvider(''); setFilterMitraRef(''); setIncludeVoided(false) }}
               className="text-xs text-gray-400 hover:text-gray-700 self-end pb-1.5">
               Reset
             </button>
@@ -613,17 +945,18 @@ export const DigitalTransactionRecorder = () => {
                   <th className="text-left px-3 py-2">Produk</th>
                   <th className="text-right px-3 py-2">Jual</th>
                   <th className="text-right px-3 py-2">Laba</th>
+                  <th className="text-left px-3 py-2">Bukti</th>
                   <th className="text-center px-3 py-2">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading && (
-                  <tr><td colSpan={7} className="text-center py-10 text-gray-400 text-xs">
+                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-xs">
                     <ArrowPathIcon className="h-5 w-5 animate-spin mx-auto mb-1 text-indigo-400" />Memuat...
                   </td></tr>
                 )}
                 {!loading && rows.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-10 text-gray-400 text-xs">Tidak ada data untuk filter ini</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-gray-400 text-xs">Tidak ada data untuk filter ini</td></tr>
                 )}
                 {!loading && rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
@@ -633,24 +966,50 @@ export const DigitalTransactionRecorder = () => {
                     <td className="px-3 py-2 text-gray-700">
                       <div>{row.product_name}</div>
                       <div className="text-xs text-gray-500">{row.provider || '-'} {row.mitra_ref ? `• Ref ${row.mitra_ref}` : ''}</div>
+                      {row.failure_reason && <div className="text-xs text-red-600">Alasan gagal: {FAILURE_REASON_LABEL_MAP.get(row.failure_reason) || row.failure_reason}</div>}
+                      {row.is_voided && <div className="text-xs text-amber-700">VOIDED: {row.void_reason || '-'}</div>}
                     </td>
                     <td className="px-3 py-2 text-right font-semibold">Rp {row.sell_price.toLocaleString('id-ID')}</td>
                     <td className="px-3 py-2 text-right font-semibold text-emerald-700">Rp {row.profit.toLocaleString('id-ID')}</td>
+                    <td className="px-3 py-2 text-xs">
+                      {row.receipt_image ? (
+                        <a href={buildAssetUrl(row.receipt_image)} target="_blank" rel="noreferrer" className="font-bold text-indigo-600 hover:text-indigo-800">Lihat</a>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-center gap-1">
                         <button
+                          onClick={() => openDetail(row.id)}
+                          className="p-1.5 rounded text-gray-400 hover:text-indigo-700"
+                          title="Lihat detail"
+                        >
+                          <EyeIcon className="h-4 w-4" />
+                        </button>
+                        <button
                           onClick={() => updateStatus(row.id, 'success')}
-                          className={`p-1.5 rounded ${row.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400 hover:text-emerald-700'}`}
+                          disabled={row.is_voided}
+                          className={`p-1.5 rounded disabled:opacity-40 ${row.status === 'success' ? 'bg-emerald-100 text-emerald-700' : 'text-gray-400 hover:text-emerald-700'}`}
                           title="Tandai success"
                         >
                           <CheckCircleIcon className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => updateStatus(row.id, 'failed')}
-                          className={`p-1.5 rounded ${row.status === 'failed' ? 'bg-red-100 text-red-700' : 'text-gray-400 hover:text-red-700'}`}
+                          disabled={row.is_voided}
+                          className={`p-1.5 rounded disabled:opacity-40 ${row.status === 'failed' ? 'bg-red-100 text-red-700' : 'text-gray-400 hover:text-red-700'}`}
                           title="Tandai failed"
                         >
                           <ExclamationCircleIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => voidTransaction(row.id)}
+                          disabled={row.is_voided}
+                          className="p-1.5 rounded text-gray-400 hover:text-amber-700 disabled:opacity-40"
+                          title="Void transaksi"
+                        >
+                          <TrashIcon className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
@@ -661,6 +1020,64 @@ export const DigitalTransactionRecorder = () => {
           </div>
         </section>
       </div>
+
+      {(detailLoading || detailError || selectedDetail) && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-auto bg-white rounded-2xl border border-gray-200 shadow-2xl">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-4 flex justify-between items-center">
+              <h4 className="font-extrabold text-gray-800">Detail Transaksi Digital</h4>
+              <button onClick={() => { setSelectedDetail(null); setDetailError('') }} className="p-1.5 rounded text-gray-500 hover:text-gray-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {detailLoading && <div className="text-sm text-gray-500">Memuat detail...</div>}
+              {detailError && <div className="text-sm text-red-600">{detailError}</div>}
+
+              {selectedDetail && (
+                <>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div><span className="text-gray-500">Ref Mitra:</span> <span className="font-bold">{selectedDetail.transaction.mitra_ref || '-'}</span></div>
+                    <div><span className="text-gray-500">Provider:</span> <span className="font-bold">{selectedDetail.transaction.provider || '-'}</span></div>
+                    <div><span className="text-gray-500">Nomor:</span> <span className="font-bold">{selectedDetail.transaction.customer_number}</span></div>
+                    <div><span className="text-gray-500">Status:</span> <span className="font-bold">{selectedDetail.transaction.status}</span></div>
+                    <div><span className="text-gray-500">Dibuat oleh:</span> <span className="font-bold">{selectedDetail.transaction.created_by}</span></div>
+                    <div><span className="text-gray-500">Diupdate oleh:</span> <span className="font-bold">{selectedDetail.transaction.updated_by || '-'}</span></div>
+                    <div><span className="text-gray-500">Waktu:</span> <span className="font-bold">{new Date(selectedDetail.transaction.created_at).toLocaleString('id-ID')}</span></div>
+                    <div><span className="text-gray-500">Voided:</span> <span className="font-bold">{selectedDetail.transaction.is_voided ? 'Ya' : 'Tidak'}</span></div>
+                  </div>
+
+                  {selectedDetail.transaction.receipt_image && (
+                    <a href={buildAssetUrl(selectedDetail.transaction.receipt_image)} target="_blank" rel="noreferrer" className="text-sm font-bold text-indigo-600 hover:text-indigo-800">Buka bukti transaksi</a>
+                  )}
+
+                  {selectedDetail.transaction.ocr_text && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-1">OCR Text</p>
+                      <pre className="text-xs whitespace-pre-wrap bg-gray-50 border border-gray-100 rounded-lg p-3">{selectedDetail.transaction.ocr_text}</pre>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-xs font-bold text-gray-500 uppercase mb-2">Timeline Aktivitas</p>
+                    <div className="space-y-2">
+                      {selectedDetail.timeline.length === 0 && <div className="text-xs text-gray-400">Belum ada timeline.</div>}
+                      {selectedDetail.timeline.map((item) => (
+                        <div key={item.id} className="rounded-lg border border-gray-100 px-3 py-2 text-xs">
+                          <div className="font-bold text-gray-700">{item.action}</div>
+                          <div className="text-gray-500">{item.details || '-'}</div>
+                          <div className="text-gray-400">{item.username || '-'} • {new Date(item.created_at).toLocaleString('id-ID')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
