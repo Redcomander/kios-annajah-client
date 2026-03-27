@@ -5,8 +5,19 @@ import { buildApiUrl, buildAssetUrl } from '../config/api'
 import { downloadApiFile } from '../utils/download'
 
 type DigitalStatus = 'pending' | 'success' | 'failed'
-type DigitalType = 'pulsa' | 'paket_data'
+type DigitalType = 'pulsa' | 'paket_data' | 'ewallet_topup' | 'pln_token' | 'bill_payment' | 'voucher_game' | 'emoney_topup' | 'other'
 type InputSource = 'manual' | 'assisted'
+
+const DEFAULT_TRANSACTION_TYPE_OPTIONS: Array<{ value: DigitalType; label: string }> = [
+  { value: 'pulsa', label: 'Pulsa' },
+  { value: 'paket_data', label: 'Paket Data' },
+  { value: 'ewallet_topup', label: 'Top Up E-Wallet' },
+  { value: 'pln_token', label: 'Token PLN' },
+  { value: 'bill_payment', label: 'Tagihan' },
+  { value: 'voucher_game', label: 'Voucher/Game' },
+  { value: 'emoney_topup', label: 'Top Up E-Money' },
+  { value: 'other', label: 'Lainnya' },
+]
 
 const DEFAULT_PROVIDER_OPTIONS = [
   'Telkomsel',
@@ -81,6 +92,7 @@ interface MetaOption {
 }
 
 interface DigitalMetaResponse {
+  transaction_types?: MetaOption[]
   providers?: MetaOption[]
   failure_reasons?: MetaOption[]
 }
@@ -159,6 +171,37 @@ const parseReceiptAmount = (text: string): number | null => {
   return parseNumberFromText(text)
 }
 
+const parseDestinationIdentifier = (text: string): string => {
+  const phoneMatch = text.match(/\b(?:\+?62|0)8\d{7,13}\b/)
+  if (phoneMatch?.[0]) {
+    return normalizeCustomerNumber(phoneMatch[0])
+  }
+
+  const labelledMatch = text.match(/(?:nomor tujuan|id pelanggan|no pelanggan|nomor meter|no meter|customer id|nomor hp)\s*[:#-]?\s*([0-9]{5,20})/i)
+  if (labelledMatch?.[1]) {
+    return normalizeCustomerNumber(labelledMatch[1])
+  }
+
+  const fallbackLongNumber = text.match(/\b\d{6,20}\b/)
+  return normalizeCustomerNumber(fallbackLongNumber?.[0] ?? '')
+}
+
+const detectTransactionType = (text: string): DigitalType => {
+  const lower = text.toLowerCase()
+  if (/(paket\s*data|kuota|data\s*package|internet)/i.test(lower)) return 'paket_data'
+  if (/(dana|ovo|gopay|linkaja|shopeepay)/i.test(lower)) return 'ewallet_topup'
+  if (/(token\s*pln|token\s*listrik|pln\s*token|listrik\s*prabayar)/i.test(lower)) return 'pln_token'
+  if (/(bpjs|pdam|tagihan|pascabayar|indihome|telkom|multifinance|internet\s*rumah)/i.test(lower)) return 'bill_payment'
+  if (/(voucher|garena|free\s*fire|mobile\s*legends|steam|google\s*play|game)/i.test(lower)) return 'voucher_game'
+  if (/(e-money|emoney|brizzi|flazz|tapcash)/i.test(lower)) return 'emoney_topup'
+  if (/pulsa/i.test(lower)) return 'pulsa'
+  return 'other'
+}
+
+const getTransactionTypeLabel = (value: DigitalType | string) => {
+  return DEFAULT_TRANSACTION_TYPE_OPTIONS.find((item) => item.value === value)?.label ?? value
+}
+
 const detectProvider = (text: string): string => {
   const lower = text.toLowerCase()
   const providerHits: Array<{ pattern: string; value: string }> = [
@@ -200,7 +243,6 @@ const parseProductName = (text: string): string => {
 
 const parseMitraText = (text: string): Partial<FormState> => {
   const lower = text.toLowerCase()
-  const phoneMatch = text.match(/\b08\d{8,13}\b/)
   const refMatch = text.match(/(?:ref|trx|transaksi|id)\s*[:#-]?\s*([a-z0-9-]{5,})/i)
   const serialMatch = text.match(/serial\s*[:#-]?\s*([a-z0-9-]{6,})/i)
   const amount = parseReceiptAmount(text)
@@ -213,14 +255,12 @@ const parseMitraText = (text: string): Partial<FormState> => {
       ? 'failed'
       : 'pending'
 
-  const transactionType: DigitalType = lower.includes('paket data') || lower.includes('kuota')
-    ? 'paket_data'
-    : 'pulsa'
+  const transactionType = detectTransactionType(text)
 
   return {
     transaction_type: transactionType,
     provider,
-    customer_number: normalizeCustomerNumber(phoneMatch?.[0] ?? ''),
+    customer_number: parseDestinationIdentifier(text),
     product_name: productName,
     mitra_ref: (serialMatch?.[1] ?? refMatch?.[1] ?? '').toUpperCase(),
     sell_price: amount != null ? String(amount) : '',
@@ -237,6 +277,7 @@ const todayISO = () => new Date().toISOString().slice(0, 10)
 export const DigitalTransactionRecorder = () => {
   const { token } = useAuth()
   const [rows, setRows] = useState<DigitalTransaction[]>([])
+  const [transactionTypeOptions, setTransactionTypeOptions] = useState<MetaOption[]>(DEFAULT_TRANSACTION_TYPE_OPTIONS)
   const [providerOptions, setProviderOptions] = useState<string[]>(DEFAULT_PROVIDER_OPTIONS)
   const [failureReasonOptions, setFailureReasonOptions] = useState<MetaOption[]>([...FAILURE_REASON_OPTIONS])
   const [form, setForm] = useState<FormState>(initialForm)
@@ -269,6 +310,9 @@ export const DigitalTransactionRecorder = () => {
       if (!res.ok) return
 
       const data = (await res.json()) as DigitalMetaResponse
+      if (Array.isArray(data.transaction_types) && data.transaction_types.length > 0) {
+        setTransactionTypeOptions(data.transaction_types)
+      }
       if (Array.isArray(data.providers) && data.providers.length > 0) {
         setProviderOptions(data.providers.map((item) => item.value))
       }
@@ -357,7 +401,7 @@ export const DigitalTransactionRecorder = () => {
 
     const normalizedNumber = normalizeCustomerNumber(form.customer_number)
     if (!normalizedNumber || normalizedNumber.length < 10) {
-      setError('Nomor pelanggan wajib diisi.')
+      setError('Tujuan / ID pelanggan wajib diisi.')
       return
     }
 
@@ -669,8 +713,8 @@ export const DigitalTransactionRecorder = () => {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 h-full">
         <section className="xl:col-span-1 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
           <div>
-            <h2 className="text-lg font-extrabold text-gray-800">Catat Pulsa & Paket Data</h2>
-            <p className="text-xs text-gray-500 mt-1">Transaksi tetap diproses di Mitra Bukalapak, lalu direkam di sini.</p>
+            <h2 className="text-lg font-extrabold text-gray-800">Catat Transaksi Mitra Bukalapak</h2>
+            <p className="text-xs text-gray-500 mt-1">Rekam pulsa, paket data, top up e-wallet, token PLN, tagihan, voucher, dan produk digital lain dari Mitra di sini.</p>
           </div>
 
           <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 space-y-2">
@@ -707,14 +751,15 @@ export const DigitalTransactionRecorder = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs font-bold text-gray-600">Jenis
+            <label className="text-xs font-bold text-gray-600">Kategori Produk
               <select
                 value={form.transaction_type}
                 onChange={(e) => setForm((p) => ({ ...p, transaction_type: e.target.value as DigitalType }))}
                 className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               >
-                <option value="pulsa">Pulsa</option>
-                <option value="paket_data">Paket Data</option>
+                {transactionTypeOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
               </select>
             </label>
 
@@ -735,7 +780,7 @@ export const DigitalTransactionRecorder = () => {
             value={form.customer_number}
             onChange={(e) => setForm((p) => ({ ...p, customer_number: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Nomor pelanggan (akan dinormalisasi ke 62xxxx)"
+            placeholder="Tujuan / ID pelanggan / nomor meter / nomor HP"
           />
 
           <select
@@ -753,7 +798,7 @@ export const DigitalTransactionRecorder = () => {
             value={form.product_name}
             onChange={(e) => setForm((p) => ({ ...p, product_name: e.target.value }))}
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Produk/Nominal (Pulsa 25K / Kuota 5GB)"
+            placeholder="Produk/Nominal (Pulsa 25K / DANA 50K / Token PLN 100K / BPJS)"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -855,7 +900,7 @@ export const DigitalTransactionRecorder = () => {
 
         <section className="xl:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm p-5 flex flex-col gap-3 overflow-hidden">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-extrabold text-gray-800">Riwayat Pulsa/Paket Data</h3>
+            <h3 className="text-lg font-extrabold text-gray-800">Riwayat Transaksi Digital Mitra</h3>
             <div className="flex items-center gap-3">
               <button onClick={exportRows} disabled={exporting || !token} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                 <ArrowDownTrayIcon className="h-4 w-4" />
@@ -882,12 +927,13 @@ export const DigitalTransactionRecorder = () => {
                 className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400" />
             </div>
             <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-bold uppercase text-gray-400">Jenis</span>
+              <span className="text-[10px] font-bold uppercase text-gray-400">Kategori</span>
               <select value={filterType} onChange={e => setFilterType(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400">
                 <option value="">Semua</option>
-                <option value="pulsa">Pulsa</option>
-                <option value="paket_data">Paket Data</option>
+                {transactionTypeOptions.map((item) => (
+                  <option key={item.value} value={item.value}>{item.label}</option>
+                ))}
               </select>
             </div>
             <div className="flex flex-col gap-0.5">
@@ -940,8 +986,8 @@ export const DigitalTransactionRecorder = () => {
               <thead className="bg-gray-50 text-gray-500 uppercase text-[11px] sticky top-0">
                 <tr>
                   <th className="text-left px-3 py-2">Waktu</th>
-                  <th className="text-left px-3 py-2">Jenis</th>
-                  <th className="text-left px-3 py-2">Nomor</th>
+                  <th className="text-left px-3 py-2">Kategori</th>
+                  <th className="text-left px-3 py-2">Tujuan / ID</th>
                   <th className="text-left px-3 py-2">Produk</th>
                   <th className="text-right px-3 py-2">Jual</th>
                   <th className="text-right px-3 py-2">Laba</th>
@@ -961,7 +1007,7 @@ export const DigitalTransactionRecorder = () => {
                 {!loading && rows.map((row) => (
                   <tr key={row.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 text-xs text-gray-600">{new Date(row.created_at).toLocaleString('id-ID')}</td>
-                    <td className="px-3 py-2 font-semibold text-gray-800">{row.transaction_type === 'pulsa' ? 'Pulsa' : 'Paket Data'}</td>
+                    <td className="px-3 py-2 font-semibold text-gray-800">{getTransactionTypeLabel(row.transaction_type)}</td>
                     <td className="px-3 py-2 text-gray-700">{row.customer_number}</td>
                     <td className="px-3 py-2 text-gray-700">
                       <div>{row.product_name}</div>
