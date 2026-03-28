@@ -275,7 +275,7 @@ const parseMitraText = (text: string): Partial<FormState> => {
 const todayISO = () => new Date().toISOString().slice(0, 10)
 
 export const DigitalTransactionRecorder = () => {
-  const { token } = useAuth()
+  const { token, logout } = useAuth()
   const [rows, setRows] = useState<DigitalTransaction[]>([])
   const [transactionTypeOptions, setTransactionTypeOptions] = useState<MetaOption[]>(DEFAULT_TRANSACTION_TYPE_OPTIONS)
   const [providerOptions, setProviderOptions] = useState<string[]>(DEFAULT_PROVIDER_OPTIONS)
@@ -300,6 +300,37 @@ export const DigitalTransactionRecorder = () => {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
 
+  const handleUnauthorized = useCallback(async (res: Response) => {
+    if (res.status !== 401) {
+      return false
+    }
+
+    const payload = await res.json().catch(() => ({})) as { error?: string }
+    if (payload.error === 'Unauthorized' || payload.error === 'Invalid Token') {
+      setError('Sesi login tidak valid/expired. Silakan login ulang.')
+      logout()
+      return true
+    }
+
+    return false
+  }, [logout])
+
+  const authorizedFetch = useCallback(async (path: string, init?: RequestInit) => {
+    if (!token) {
+      throw new Error('Missing auth token')
+    }
+
+    const headers = new Headers(init?.headers || {})
+    headers.set('Authorization', `Bearer ${token}`)
+    const res = await fetch(buildApiUrl(path), {
+      ...init,
+      headers,
+    })
+
+    await handleUnauthorized(res.clone())
+    return res
+  }, [token, handleUnauthorized])
+
   const fetchMeta = useCallback(async () => {
     if (!token) return
 
@@ -307,6 +338,7 @@ export const DigitalTransactionRecorder = () => {
       const res = await fetch(buildApiUrl('/api/digital-transactions/meta'), {
         headers: { Authorization: `Bearer ${token}` },
       })
+      if (await handleUnauthorized(res.clone())) return
       if (!res.ok) return
 
       const data = (await res.json()) as DigitalMetaResponse
@@ -336,9 +368,8 @@ export const DigitalTransactionRecorder = () => {
       if (filterProvider) params.set('provider',  filterProvider)
       if (filterMitraRef) params.set('mitra_ref', filterMitraRef)
       if (includeVoided) params.set('include_voided', 'true')
-      const res = await fetch(buildApiUrl(`/api/digital-transactions?${params}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authorizedFetch(`/api/digital-transactions?${params}`)
+      if (!res.ok) return
       const data = await res.json()
       setRows(Array.isArray(data) ? data : [])
     } catch (err) {
@@ -347,7 +378,7 @@ export const DigitalTransactionRecorder = () => {
     } finally {
       setLoading(false)
     }
-  }, [token, filterDateFrom, filterDateTo, filterStatus, filterType, filterProvider, filterMitraRef, includeVoided])
+  }, [token, filterDateFrom, filterDateTo, filterStatus, filterType, filterProvider, filterMitraRef, includeVoided, authorizedFetch])
 
   useEffect(() => {
     void fetchRows()
@@ -377,9 +408,8 @@ export const DigitalTransactionRecorder = () => {
     const formData = new FormData()
     formData.append('receipt', file)
 
-    const res = await fetch(buildApiUrl('/api/digital-transactions/receipt'), {
+    const res = await authorizedFetch('/api/digital-transactions/receipt', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
       body: formData,
     })
 
@@ -457,10 +487,9 @@ export const DigitalTransactionRecorder = () => {
         commission: Number(form.commission || 0),
       }
 
-      const res = await fetch(buildApiUrl('/api/digital-transactions'), {
+      const res = await authorizedFetch('/api/digital-transactions', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -593,10 +622,9 @@ export const DigitalTransactionRecorder = () => {
     }
 
     try {
-      const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}/status`), {
+      const res = await authorizedFetch(`/api/digital-transactions/${id}/status`, {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ status, failure_reason: failureReason }),
@@ -621,9 +649,7 @@ export const DigitalTransactionRecorder = () => {
     setDetailLoading(true)
     setDetailError('')
     try {
-      const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authorizedFetch(`/api/digital-transactions/${id}`)
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data?.transaction) {
         setDetailError(data.error || 'Gagal memuat detail transaksi.')
@@ -653,10 +679,9 @@ export const DigitalTransactionRecorder = () => {
     }
 
     try {
-      const res = await fetch(buildApiUrl(`/api/digital-transactions/${id}/void`), {
+      const res = await authorizedFetch(`/api/digital-transactions/${id}/void`, {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ reason: trimmedReason }),

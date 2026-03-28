@@ -55,6 +55,7 @@ interface DigitalSummary {
 }
 
 const todayIso = new Date().toISOString().slice(0, 10)
+const PROFIT_MARGIN_RATE = 0.125
 
 export const Reports = () => {
     const [period, setPeriod] = useState('daily') // daily, monthly, yearly
@@ -131,13 +132,17 @@ export const Reports = () => {
             .finally(() => setSummaryLoading(false))
     }, [summaryDate, token])
 
-    const { safeData, totalSales, averageSales, bestDay } = useMemo(() => {
+    const { safeData, totalSales, averageSales, bestDay, estimatedProfitMargin } = useMemo(() => {
         const safeData = Array.isArray(data) ? data : []
         const totalSales = safeData.reduce((acc, curr) => acc + (curr.total || 0), 0)
         const averageSales = safeData.length > 0 ? totalSales / safeData.length : 0
         const bestDay = safeData.reduce((prev, current) => ((prev.total || 0) > (current.total || 0)) ? prev : current, {total: 0, date: '-'})
-        return { safeData, totalSales, averageSales, bestDay }
+        const estimatedProfitMargin = totalSales * PROFIT_MARGIN_RATE
+        return { safeData, totalSales, averageSales, bestDay, estimatedProfitMargin }
     }, [data])
+
+    const dailyEstimatedProfitMargin = (dailySummary?.total ?? 0) * PROFIT_MARGIN_RATE
+    const digitalEstimatedProfitMargin = (digitalSummary?.total_omzet ?? 0) * PROFIT_MARGIN_RATE
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col overflow-y-auto">
@@ -170,7 +175,7 @@ export const Reports = () => {
 
             {reportView === 'toko' && (<>
             {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-6 mb-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
                 <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><BanknotesIcon className="h-5 w-5" /></div>
@@ -197,6 +202,15 @@ export const Reports = () => {
                     <div className="text-2xl font-bold text-gray-800">{formatRupiah(bestDay.total)}</div>
                     <div className="text-xs text-gray-500 mt-1">Pada {bestDay.date}</div>
                 </div>
+
+                <div className="bg-amber-50 p-5 rounded-2xl border border-amber-100">
+                    <div className="flex justify-between items-start mb-2">
+                        <div className="p-2 bg-amber-100 rounded-lg text-amber-600"><ArrowTrendingUpIcon className="h-5 w-5" /></div>
+                        <span className="text-xs font-bold text-amber-500 uppercase">Margin 12.5%</span>
+                    </div>
+                    <div className="text-2xl font-bold text-gray-800">{formatRupiah(estimatedProfitMargin)}</div>
+                    <div className="text-xs text-gray-500 mt-1">Estimasi laba dari omzet</div>
+                </div>
             </div>
 
             <div className="mb-8 rounded-2xl border border-gray-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50 p-5">
@@ -217,7 +231,7 @@ export const Reports = () => {
 
                 {!summaryLoading && dailySummary && (
                     <>
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
                             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4">
                                 <div className="text-xs text-indigo-500 font-bold uppercase">Total Harian</div>
                                 <div className="mt-1 text-xl font-bold text-gray-800">{formatRupiah(dailySummary.total)}</div>
@@ -233,6 +247,10 @@ export const Reports = () => {
                             <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
                                 <div className="text-xs text-emerald-600 font-bold uppercase">Tanggal</div>
                                 <div className="mt-1 text-lg font-bold text-gray-800">{dailySummary.date}</div>
+                            </div>
+                            <div className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                                <div className="text-xs text-amber-600 font-bold uppercase">Margin 12.5%</div>
+                                <div className="mt-1 text-xl font-bold text-gray-800">{formatRupiah(dailyEstimatedProfitMargin)}</div>
                             </div>
                         </div>
 
@@ -359,7 +377,7 @@ export const Reports = () => {
 
                     {!digitalLoading && digitalSummary && (
                         <>
-                            <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
                                 <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-4">
                                     <div className="text-xs font-bold text-indigo-500 uppercase mb-1">Total Transaksi</div>
                                     <div className="text-2xl font-bold text-gray-800">{digitalSummary.total_count}</div>
@@ -380,6 +398,11 @@ export const Reports = () => {
                                     <div className="text-xs font-bold text-cyan-600 uppercase mb-1">Laba Bersih</div>
                                     <div className="text-2xl font-bold text-gray-800">{formatRupiah(digitalSummary.total_profit)}</div>
                                     <div className="text-xs text-gray-500 mt-1">Jual − Modal sukses</div>
+                                </div>
+                                <div className="bg-amber-50 rounded-2xl border border-amber-100 p-4">
+                                    <div className="text-xs font-bold text-amber-600 uppercase mb-1">Margin 12.5%</div>
+                                    <div className="text-2xl font-bold text-gray-800">{formatRupiah(digitalEstimatedProfitMargin)}</div>
+                                    <div className="text-xs text-gray-500 mt-1">Estimasi laba dari omzet sukses</div>
                                 </div>
                                 <div className="bg-purple-50 rounded-2xl border border-purple-100 p-4">
                                     <div className="text-xs font-bold text-purple-600 uppercase mb-1">Margin Rata-rata</div>
