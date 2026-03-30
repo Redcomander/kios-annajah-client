@@ -64,7 +64,7 @@ export const Reports = () => {
         const [dailySummary, setDailySummary] = useState<DailySummary | null>(null)
     const [loading, setLoading] = useState(false)
         const [summaryLoading, setSummaryLoading] = useState(false)
-        const { token } = useAuth()
+        const { token, user } = useAuth()
 
         const [reportView, setReportView] = useState<'toko' | 'digital'>('toko')
         const [digitalDateFrom, setDigitalDateFrom] = useState(() =>
@@ -143,6 +143,8 @@ export const Reports = () => {
 
     const dailyEstimatedProfitMargin = (dailySummary?.total ?? 0) * PROFIT_MARGIN_RATE
     const digitalEstimatedProfitMargin = (digitalSummary?.total_omzet ?? 0) * PROFIT_MARGIN_RATE
+    const digitalMarginDifference = (digitalSummary?.total_profit ?? 0) - digitalEstimatedProfitMargin
+    const isAdmin = user?.role === 'admin'
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full flex flex-col overflow-y-auto">
@@ -377,7 +379,7 @@ export const Reports = () => {
 
                     {!digitalLoading && digitalSummary && (
                         <>
-                            <div className="grid grid-cols-2 xl:grid-cols-5 gap-4">
+                            <div className={`grid grid-cols-2 gap-4 ${isAdmin ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
                                 <div className="bg-indigo-50 rounded-2xl border border-indigo-100 p-4">
                                     <div className="text-xs font-bold text-indigo-500 uppercase mb-1">Total Transaksi</div>
                                     <div className="text-2xl font-bold text-gray-800">{digitalSummary.total_count}</div>
@@ -413,6 +415,13 @@ export const Reports = () => {
                                     </div>
                                     <div className="text-xs text-gray-500 mt-1">Laba / Omzet × 100</div>
                                 </div>
+                                {isAdmin && (
+                                    <div className={`rounded-2xl border p-4 ${digitalMarginDifference >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'}`}>
+                                        <div className={`text-xs font-bold uppercase mb-1 ${digitalMarginDifference >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>Selisih Margin</div>
+                                        <div className="text-2xl font-bold text-gray-800">{formatRupiah(digitalMarginDifference)}</div>
+                                        <div className="text-xs text-gray-500 mt-1">Laba aktual − target margin 12.5%</div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">

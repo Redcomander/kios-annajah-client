@@ -48,6 +48,18 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
         return `${qty.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
     }
 
+    const formatExpiryLabel = (value?: string) => {
+        if (!value) return '-'
+        if (value.startsWith('0001-01-01')) return '-'
+
+        const parsed = new Date(value)
+        if (Number.isNaN(parsed.getTime()) || parsed.getFullYear() < 1900) {
+            return '-'
+        }
+
+        return parsed.toLocaleDateString('id-ID')
+    }
+
     const warningProducts = products
         .filter((product) => product.low_stock || product.near_expiry)
         .slice(0, 4)
@@ -225,7 +237,7 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                                     <span className="text-right whitespace-nowrap">
                                         {product.low_stock ? `Stok rendah (${product.stock})` : ''}
                                         {product.low_stock && product.near_expiry ? ' • ' : ''}
-                                        {product.near_expiry ? `Segera kadaluarsa (${new Date(product.nearest_expired_at || '').toLocaleDateString('id-ID')})` : ''}
+                                        {product.near_expiry ? `Segera kadaluarsa (${formatExpiryLabel(product.nearest_expired_at)})` : ''}
                                     </span>
                                 </div>
                             ))}

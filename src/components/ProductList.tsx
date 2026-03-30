@@ -308,7 +308,18 @@ export const ProductList = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">Barcode</label>
-                                    <input name="barcode" defaultValue={editingProduct?.barcode} type="text" className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Opsional (boleh kosong)" />
+                                    <input
+                                        name="barcode"
+                                        defaultValue={editingProduct?.barcode}
+                                        type="text"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                            }
+                                        }}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        placeholder="Opsional (boleh kosong)"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">Kategori</label>
@@ -328,14 +339,14 @@ export const ProductList = () => {
                                     <label className="block text-sm font-bold text-gray-700 mb-1">Harga Beli (Modal)</label>
                                     <div className="relative">
                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">Rp</span>
-                                        <input required name="cost_price" defaultValue={editingProduct?.cost_price} type="number" className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-medium" />
+                                        <input name="cost_price" defaultValue={editingProduct?.cost_price} type="number" className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-medium" placeholder="Opsional" />
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-1">Harga Jual</label>
                                     <div className="relative">
                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">Rp</span>
-                                        <input required name="price" defaultValue={editingProduct?.price} type="number" className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-medium" />
+                                        <input name="price" defaultValue={editingProduct?.price} type="number" className="w-full border border-gray-300 rounded-xl pl-12 pr-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none font-medium" placeholder="Opsional" />
                                     </div>
                                 </div>
                             </div>

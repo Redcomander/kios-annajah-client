@@ -10,6 +10,8 @@ interface Product {
     name: string;
     stock: number;
     unit: string;
+    price?: number;
+    cost_price?: number;
 }
 
 interface RestockModalProps {
@@ -26,6 +28,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [addQty, setAddQty] = useState<string>('')
     const [expiredAt, setExpiredAt] = useState('')
+    const [sellPrice, setSellPrice] = useState('')
+    const [costPrice, setCostPrice] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     
@@ -59,6 +63,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
             setSelectedProduct(exactMatch)
             setAddQty('')
             setExpiredAt('')
+            setSellPrice(exactMatch.price != null ? String(exactMatch.price) : '')
+            setCostPrice(exactMatch.cost_price != null ? String(exactMatch.cost_price) : '')
             return
         }
 
@@ -71,6 +77,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
             setSelectedProduct(nameMatches[0])
             setAddQty('')
             setExpiredAt('')
+            setSellPrice(nameMatches[0].price != null ? String(nameMatches[0].price) : '')
+            setCostPrice(nameMatches[0].cost_price != null ? String(nameMatches[0].cost_price) : '')
         } else {
             // Multiple matches found, show list
             setSearchResults(nameMatches)
@@ -81,6 +89,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         setSelectedProduct(product)
         setAddQty('')
         setExpiredAt('')
+        setSellPrice(product.price != null ? String(product.price) : '')
+        setCostPrice(product.cost_price != null ? String(product.cost_price) : '')
         setSearchResults([])
         setQuery('')
     }
@@ -95,6 +105,29 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
             return
         }
 
+        const payload: { qty: number; expired_at: string; price?: number; cost_price?: number } = {
+            qty: qtyToAdd,
+            expired_at: expiredAt === '0001-01-01' ? '' : expiredAt,
+        }
+
+        if (sellPrice.trim() !== '') {
+            const parsedSell = Number(sellPrice)
+            if (Number.isNaN(parsedSell) || parsedSell < 0) {
+                setError('Harga jual tidak valid')
+                return
+            }
+            payload.price = parsedSell
+        }
+
+        if (costPrice.trim() !== '') {
+            const parsedCost = Number(costPrice)
+            if (Number.isNaN(parsedCost) || parsedCost < 0) {
+                setError('Harga beli tidak valid')
+                return
+            }
+            payload.cost_price = parsedCost
+        }
+
         setLoading(true)
 
         try {
@@ -104,7 +137,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                     'Content-Type': 'application/json',
                     ...(token ? { Authorization: `Bearer ${token}` } : {}),
                 },
-                body: JSON.stringify({ qty: qtyToAdd, expired_at: expiredAt })
+                body: JSON.stringify(payload)
             })
 
             if (res.ok) {
@@ -113,6 +146,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                 setQuery('')
                 setAddQty('')
                 setExpiredAt('')
+                setSellPrice('')
+                setCostPrice('')
                 setError('')
                 setSearchResults([])
                 // alert(`Stok ${selectedProduct.name} +${qtyToAdd} berhasil!`) // Optional feedback
@@ -243,6 +278,31 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                                     className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
                                 />
                                 <p className="text-xs text-gray-400 mt-1">Opsional. Isi jika batch stok ini punya tanggal kadaluarsa.</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Penyesuaian Harga Beli (Opsional)</label>
+                                    <input
+                                        type="number"
+                                        value={costPrice}
+                                        onChange={(e) => setCostPrice(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        placeholder="Kosongkan jika tidak diubah"
+                                        min="0"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-gray-700 mb-2">Penyesuaian Harga Jual (Opsional)</label>
+                                    <input
+                                        type="number"
+                                        value={sellPrice}
+                                        onChange={(e) => setSellPrice(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        placeholder="Kosongkan jika tidak diubah"
+                                        min="0"
+                                    />
+                                </div>
                             </div>
 
                             <div className="flex gap-3">
