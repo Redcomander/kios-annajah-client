@@ -209,6 +209,7 @@ async function printHTML(payload: { html: string; title?: string }) {
 	const printerSettings = readPrinterSettings()
   const receiptWidthMm = printerSettings.receiptWidthMm === 80 ? 80 : 58
   const approxWidthPx = Math.max(220, Math.round((receiptWidthMm / 25.4) * 96) + 32)
+  const useSilentPrint = false
 
   const printWindow = new BrowserWindow({
     show: false,
@@ -262,32 +263,21 @@ async function printHTML(payload: { html: string; title?: string }) {
 
     const commonOptions: Electron.WebContentsPrintOptions = {
       printBackground: true,
-      silent: printerSettings.silentPrint,
+      silent: useSilentPrint,
       deviceName: printerSettings.defaultPrinterName || undefined,
       landscape: false,
     }
 
-    try {
-      return await attemptPrint({
-        ...commonOptions,
-        pageSize: {
-          width: widthMicrons,
-          height: heightMicrons,
-        },
-        margins: {
-          marginType: 'none',
-        },
-      })
-    } catch (primaryError) {
-      if (!printerSettings.silentPrint) {
-        throw primaryError
-      }
-
-      // Fallback for silent mode: retry without explicit pageSize.
-      return await attemptPrint({
-        ...commonOptions,
-      })
-    }
+    return await attemptPrint({
+      ...commonOptions,
+      pageSize: {
+        width: widthMicrons,
+        height: heightMicrons,
+      },
+      margins: {
+        marginType: 'none',
+      },
+    })
   } catch (error) {
     if (!printWindow.isDestroyed()) {
       printWindow.close()
