@@ -208,8 +208,11 @@ async function startBackend() {
 async function printHTML(payload: { html: string; title?: string }) {
 	const printerSettings = readPrinterSettings()
   const receiptWidthMm = printerSettings.receiptWidthMm === 80 ? 80 : 58
+  const approxWidthPx = Math.max(220, Math.round((receiptWidthMm / 25.4) * 96) + 32)
   const printWindow = new BrowserWindow({
     show: false,
+    width: approxWidthPx,
+    height: 1200,
     autoHideMenuBar: true,
     webPreferences: {
       sandbox: true,
@@ -223,6 +226,21 @@ async function printHTML(payload: { html: string; title?: string }) {
 
     await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(payload.html)}`)
 
+    // Give Chromium a moment to finish layout so silent print does not send blank content.
+    await printWindow.webContents
+      .executeJavaScript(
+        `new Promise((resolve) => {
+          const done = () => setTimeout(resolve, 120)
+          if (document.fonts && document.fonts.ready) {
+            document.fonts.ready.then(done).catch(done)
+          } else {
+            done()
+          }
+        })`,
+        true,
+      )
+      .catch(() => undefined)
+
     const contentHeightPx = await printWindow.webContents
       .executeJavaScript('Math.max(document.body?.scrollHeight || 0, document.documentElement?.scrollHeight || 0)', true)
       .catch(() => 0)
@@ -230,37 +248,66 @@ async function printHTML(payload: { html: string; title?: string }) {
     const widthMicrons = receiptWidthMm * 1000
     const heightMicrons = Math.max(50000, Math.ceil(Number(contentHeightPx || 0) * 264.583 + 4000))
 
-    return await new Promise<boolean>((resolve, reject) => {
-      printWindow.webContents.print(
-        {
-          printBackground: true,
-          silent: printerSettings.silentPrint,
-          deviceName: printerSettings.defaultPrinterName || undefined,
-          pageSize: {
-            width: widthMicrons,
-            height: heightMicrons,
-          },
-          margins: {
-            marginType: 'none',
-          },
-          landscape: false,
-        },
-        (success, failureReason) => {
-          printWindow.close()
+    const attemptPrint = (options: Electron.WebContentsPrintOptions) =>
+      new Promise<boolean>((resolve, reject) => {
+        printWindow.webContents.print(options, (success, failureReason) => {
           if (!success) {
             reject(new Error(failureReason || 'Print canceled'))
             return
           }
-
           resolve(true)
+        })
+      })
+
+    const commonOptions: Electron.WebContentsPrintOptions = {
+      printBackground: true,
+      silent: printerSettings.silentPrint,
+      deviceName: printerSettings.defaultPrinterName || undefined,
+      landscape: false,
+    }
+
+    try {
+      if (printerSettings.silentPrint) {
+        // Compatibility-first path: many thermal drivers only work in silent mode with minimal options.
+        return await attemptPrint(commonOptions)
+      }
+
+      return await attemptPrint({
+        ...commonOptions,
+        pageSize: {
+          width: widthMicrons,
+          height: heightMicrons,
         },
-      )
-    })
+        margins: {
+          marginType: 'none',
+        },
+      })
+    } catch (primaryError) {
+      if (!printerSettings.silentPrint) {
+        throw primaryError
+      }
+
+      // Fallback for silent mode when minimal options fail.
+      return await attemptPrint({
+        ...commonOptions,
+        pageSize: {
+          width: widthMicrons,
+          height: heightMicrons,
+        },
+        margins: {
+          marginType: 'none',
+        },
+      })
+    }
   } catch (error) {
     if (!printWindow.isDestroyed()) {
       printWindow.close()
     }
     throw error
+  } finally {
+    if (!printWindow.isDestroyed()) {
+      printWindow.close()
+    }
   }
 }
 
