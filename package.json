@@ -1,15 +1,16 @@
 {
   "name": "kios-annajah-desktop",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
     "dev:monitoring": "vite --mode monitoring --host 0.0.0.0 --open",
+    "clean:releases": "node scripts/clean-releases.mjs",
     "build:backend": "node scripts/build-backend.mjs",
     "build:web": "tsc && vite build --mode monitoring",
-    "build:desktop": "npm run build:backend && tsc && vite build && electron-builder",
+    "build:desktop": "npm run clean:releases && npm run build:backend && tsc && vite build && electron-builder",
     "build": "npm run build:desktop",
     "preview:web": "vite preview --host 0.0.0.0 --port 4173 --open",
     "preview": "vite preview",
