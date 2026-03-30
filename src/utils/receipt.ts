@@ -28,7 +28,7 @@ const escapeHtml = (value: string) => value
 
 export function renderReceiptHtml(receipt: ReceiptData, receiptWidthMm = 58) {
   const safeWidthMm = receiptWidthMm === 80 ? 80 : 58
-  const contentWidthMm = Math.max(48, safeWidthMm - 4)
+  const contentWidthMm = safeWidthMm === 80 ? 74 : 43
 
   const itemsHtml = receipt.items
     .map(
@@ -62,13 +62,13 @@ export function renderReceiptHtml(receipt: ReceiptData, receiptWidthMm = 58) {
         font-weight: 700;
         color: #000;
         width: ${contentWidthMm}mm;
-        padding: 1.5mm 2mm 3mm;
+        padding: 1.5mm 4mm 3mm 1mm;
       }
       .center { text-align: center; }
       .divider { border: none; border-top: 1px dashed #000; margin: 4px 0; }
       .row { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0; }
       .row-label { flex: 1; min-width: 0; padding-right: 4px; }
-      .row-value { flex-shrink: 0; text-align: right; }
+      .row-value { flex-shrink: 0; text-align: right; white-space: nowrap; }
     </style>
   </head>
   <body>
