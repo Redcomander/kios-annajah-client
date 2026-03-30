@@ -144,6 +144,7 @@ export const Reports = () => {
     const dailyEstimatedProfitMargin = (dailySummary?.total ?? 0) * PROFIT_MARGIN_RATE
     const digitalEstimatedProfitMargin = (digitalSummary?.total_omzet ?? 0) * PROFIT_MARGIN_RATE
     const digitalMarginDifference = (digitalSummary?.total_profit ?? 0) - digitalEstimatedProfitMargin
+    const tokoOmzetAfterMargin = totalSales - estimatedProfitMargin
     const isAdmin = user?.role === 'admin'
 
     return (
@@ -177,7 +178,7 @@ export const Reports = () => {
 
             {reportView === 'toko' && (<>
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+            <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 ${isAdmin ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
                 <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100">
                     <div className="flex justify-between items-start mb-2">
                         <div className="p-2 bg-indigo-100 rounded-lg text-indigo-600"><BanknotesIcon className="h-5 w-5" /></div>
@@ -213,6 +214,17 @@ export const Reports = () => {
                     <div className="text-2xl font-bold text-gray-800">{formatRupiah(estimatedProfitMargin)}</div>
                     <div className="text-xs text-gray-500 mt-1">Estimasi laba dari omzet</div>
                 </div>
+
+                {isAdmin && (
+                    <div className="bg-cyan-50 p-5 rounded-2xl border border-cyan-100">
+                        <div className="flex justify-between items-start mb-2">
+                            <div className="p-2 bg-cyan-100 rounded-lg text-cyan-600"><BanknotesIcon className="h-5 w-5" /></div>
+                            <span className="text-xs font-bold text-cyan-600 uppercase">Omzet - Margin 12.5%</span>
+                        </div>
+                        <div className="text-2xl font-bold text-gray-800">{formatRupiah(tokoOmzetAfterMargin)}</div>
+                        <div className="text-xs text-gray-500 mt-1">Hanya admin</div>
+                    </div>
+                )}
             </div>
 
             <div className="mb-8 rounded-2xl border border-gray-200 bg-gradient-to-r from-slate-50 via-white to-emerald-50 p-5">

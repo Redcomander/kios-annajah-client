@@ -7,8 +7,12 @@ import {
     XMarkIcon, 
     ArrowUpTrayIcon, 
     ArchiveBoxArrowDownIcon, 
-    AdjustmentsHorizontalIcon 
+    AdjustmentsHorizontalIcon,
+    DocumentArrowDownIcon
 } from '@heroicons/react/24/solid'
+import * as XLSX from 'xlsx'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { UnitManager } from './UnitManager'
 import { RestockModal } from './RestockModal'
 import { CategoryManager } from './CategoryManager'
@@ -111,6 +115,80 @@ export const ProductList = () => {
         )
     }), [search, products])
 
+    const formatExpiredDate = (value?: string) => {
+        if (!value || value.startsWith('0001-01-01')) return '-'
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime()) || date.getFullYear() < 1900) return '-'
+        return date.toLocaleDateString('id-ID')
+    }
+
+    const toDateInputValue = (value?: string) => {
+        if (!value || value.startsWith('0001-01-01')) return ''
+        return value.slice(0, 10)
+    }
+
+    const exportToExcel = () => {
+        const rows = filteredProducts.map((product) => {
+            const margin = product.price - product.cost_price
+            const marginPct = product.price > 0 ? (margin / product.price) * 100 : 0
+            return {
+                Barcode: product.barcode || '-',
+                Nama: product.name,
+                Kategori: product.category,
+                Satuan: product.unit || 'Pcs',
+                Stok: product.stock,
+                HargaBeli: product.cost_price,
+                HargaJual: product.price,
+                Margin: margin,
+                MarginPersen: Number(marginPct.toFixed(2)),
+                ExpiredTerdekat: formatExpiredDate(product.nearest_expired_at),
+            }
+        })
+
+        const worksheet = XLSX.utils.json_to_sheet(rows)
+        const workbook = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Produk')
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+        XLSX.writeFile(workbook, `produk-${stamp}.xlsx`)
+    }
+
+    const exportToPdf = () => {
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' })
+        const stamp = new Date().toLocaleString('id-ID')
+
+        doc.setFontSize(14)
+        doc.text('Daftar Produk', 40, 36)
+        doc.setFontSize(10)
+        doc.text(`Dibuat: ${stamp}`, 40, 54)
+
+        autoTable(doc, {
+            startY: 70,
+            head: [[
+                'Barcode', 'Nama', 'Kategori', 'Satuan', 'Stok',
+                'Harga Beli', 'Harga Jual', 'Margin', 'Expired'
+            ]],
+            body: filteredProducts.map((product) => {
+                const margin = product.price - product.cost_price
+                return [
+                    product.barcode || '-',
+                    product.name,
+                    product.category,
+                    product.unit || 'Pcs',
+                    String(product.stock),
+                    `Rp ${product.cost_price.toLocaleString('id-ID')}`,
+                    `Rp ${product.price.toLocaleString('id-ID')}`,
+                    `Rp ${margin.toLocaleString('id-ID')}`,
+                    formatExpiredDate(product.nearest_expired_at),
+                ]
+            }),
+            styles: { fontSize: 9, cellPadding: 4 },
+            headStyles: { fillColor: [79, 70, 229] },
+        })
+
+        const filenameStamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+        doc.save(`produk-${filenameStamp}.pdf`)
+    }
+
     return (
         <div className="h-full flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             {/* Header */}
@@ -128,6 +206,20 @@ export const ProductList = () => {
                  </div>
                </div>
                <div className="flex gap-3">
+                      <button
+                          onClick={exportToExcel}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 font-bold transition-all shadow-sm"
+                      >
+                          <DocumentArrowDownIcon className="h-5 w-5" />
+                          <span>Export Excel</span>
+                      </button>
+                      <button
+                          onClick={exportToPdf}
+                          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 hover:border-gray-300 font-bold transition-all shadow-sm"
+                      >
+                          <DocumentArrowDownIcon className="h-5 w-5" />
+                          <span>Export PDF</span>
+                      </button>
                  <button 
                     onClick={() => setIsRestockModalOpen(true)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 font-bold transition-all shadow-lg shadow-emerald-200 active:scale-95"
@@ -216,6 +308,7 @@ export const ProductList = () => {
                             <th className="px-6 py-4 text-right">Harga Beli</th>
                             <th className="px-6 py-4 text-right">Harga Jual</th>
                             <th className="px-6 py-4 text-right">Margin</th>
+                            <th className="px-6 py-4 text-center">Expired</th>
                             <th className="px-6 py-4 text-center">Stok</th>
                             <th className="px-6 py-4 text-right rounded-tr-xl">Aksi</th>
                         </tr>
@@ -259,6 +352,11 @@ export const ProductList = () => {
                                             </div>
                                         )
                                     })()}
+                                </td>
+                                <td className="px-6 py-3 text-center">
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${product.near_expiry ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'}`}>
+                                        {formatExpiredDate(product.nearest_expired_at)}
+                                    </span>
                                 </td>
                                 <td className="px-6 py-3 text-center">
                                     <div className={`font-bold inline-flex items-center gap-1 ${product.stock <= 10 ? 'text-red-500' : 'text-green-600'}`}>
@@ -366,7 +464,7 @@ export const ProductList = () => {
 
                             <div>
                                 <label className="block text-sm font-bold text-gray-700 mb-1">Tanggal Kadaluarsa (Stok Awal)</label>
-                                <input name="expired_at" type="date" className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                                <input name="expired_at" type="date" defaultValue={toDateInputValue(editingProduct?.nearest_expired_at)} className="w-full border border-gray-300 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none" />
                                 <p className="text-xs text-gray-400 mt-1">Kosongkan jika produk tidak memiliki tanggal kadaluarsa.</p>
                             </div>
 

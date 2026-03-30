@@ -1,7 +1,7 @@
 {
   "name": "kios-annajah-desktop",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -91,5 +91,10 @@
     "vite": "^5.1.4",
     "vite-plugin-electron": "^0.28.2",
     "vite-plugin-electron-renderer": "^0.14.5"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
+    "xlsx": "^0.18.5"
   }
 }
