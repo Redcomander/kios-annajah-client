@@ -28,70 +28,82 @@ const escapeHtml = (value: string) => value
 
 export function renderReceiptHtml(receipt: ReceiptData, receiptWidthMm = 58) {
   const safeWidthMm = receiptWidthMm === 80 ? 80 : 58
+
   const itemsHtml = receipt.items
     .map(
       (item) => `
-        <tr>
-          <td style="padding:6px 0; vertical-align:top;">${escapeHtml(item.name)}<br><span style="color:#6b7280; font-size:12px;">${item.qty} x ${formatCurrency(item.price)}</span></td>
-          <td style="padding:6px 0; text-align:right; vertical-align:top;">${formatCurrency(item.qty * item.price)}</td>
-        </tr>
+        <div style="margin:2px 0;">
+          <div style="font-size:11px; font-weight:800; word-break:break-word;">${escapeHtml(item.name)}</div>
+          <div style="display:flex; justify-content:space-between; font-size:10px; font-weight:700;">
+            <span>${item.qty} x ${formatCurrency(item.price)}</span>
+            <span>${formatCurrency(item.qty * item.price)}</span>
+          </div>
+        </div>
       `,
     )
     .join('')
 
-  return `
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>Receipt ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</title>
-        <style>
-          @page { size: ${safeWidthMm}mm auto; margin: 0; }
-          * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; margin: 0; padding: 2mm; color: #111827; width: ${safeWidthMm - 4}mm; }
-          .wrap { width: 100%; margin: 0; }
-          h1 { font-size: 14px; margin: 0 0 3px; }
-          .muted { color: #4b5563; font-size: 10px; line-height: 1.3; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          .divider { border-top: 1px dashed #6b7280; margin: 8px 0; }
-          .total { font-size: 13px; font-weight: 700; }
-        </style>
-      </head>
-      <body>
-        <div class="wrap">
-          <h1>${escapeHtml(SHOP_NAME)}</h1>
-          ${SHOP_PHONE ? `<div class="muted">${escapeHtml(SHOP_PHONE)}</div>` : ''}
-          <div class="muted">Struk Transaksi ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</div>
-          <div class="muted">${new Date(receipt.createdAt).toLocaleString('id-ID')}</div>
-          <div class="muted">Metode: ${escapeHtml(receipt.paymentMethod.toUpperCase())}${receipt.referenceNumber ? ` · Ref: ${escapeHtml(receipt.referenceNumber)}` : ''}</div>
-          <div class="divider"></div>
-          <table>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <div class="divider"></div>
-          <table>
-            <tbody>
-              <tr>
-                <td class="total">Total</td>
-                <td class="total" style="text-align:right;">${formatCurrency(receipt.total)}</td>
-              </tr>
-              ${receipt.cashReceived != null ? `
-              <tr>
-                <td style="padding-top:4px;">Uang Diterima</td>
-                <td style="text-align:right; padding-top:4px;">${formatCurrency(receipt.cashReceived)}</td>
-              </tr>
-              <tr>
-                <td class="total" style="color:#16a34a;">Kembalian</td>
-                <td class="total" style="text-align:right; color:#16a34a;">${formatCurrency(receipt.change ?? 0)}</td>
-              </tr>` : ''}
-            </tbody>
-          </table>
-        </div>
-      </body>
-    </html>
-  `
+  const txDate = new Date(receipt.createdAt)
+  const dateStr = txDate.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const timeStr = txDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Struk${receipt.transactionId ? ` #${receipt.transactionId}` : ''}</title>
+    <style>
+      @page { size: ${safeWidthMm}mm auto; margin: 0; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: 'Arial Narrow', Arial, sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        color: #000;
+        width: ${safeWidthMm}mm;
+        padding: 2mm 2mm 3mm;
+      }
+      .center { text-align: center; }
+      .divider { border: none; border-top: 1px dashed #000; margin: 4px 0; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; margin: 2px 0; }
+      .row-label { flex: 1; min-width: 0; padding-right: 4px; }
+      .row-value { flex-shrink: 0; text-align: right; }
+    </style>
+  </head>
+  <body>
+    <div class="center" style="margin-bottom:3px;">
+      <div style="font-size:15px; font-weight:900; letter-spacing:0.5px; text-transform:uppercase;">${escapeHtml(SHOP_NAME)}</div>
+      ${SHOP_PHONE ? `<div style="font-size:9px; font-weight:700;">${escapeHtml(SHOP_PHONE)}</div>` : ''}
+    </div>
+    <div class="divider"></div>
+    <div style="font-size:9px; font-weight:700; margin-bottom:1px;">
+      ${receipt.transactionId ? `No: #${receipt.transactionId} | ` : ''}${dateStr} ${timeStr}
+    </div>
+    <div style="font-size:9px; font-weight:700;">
+      Metode: ${escapeHtml(receipt.paymentMethod.toUpperCase())}${receipt.referenceNumber ? ` | Ref: ${escapeHtml(receipt.referenceNumber)}` : ''}
+    </div>
+    <div class="divider"></div>
+    ${itemsHtml}
+    <div class="divider"></div>
+    <div class="row" style="font-size:13px; font-weight:900;">
+      <span class="row-label">TOTAL</span>
+      <span class="row-value">${formatCurrency(receipt.total)}</span>
+    </div>
+    ${receipt.cashReceived != null ? `
+    <div class="row" style="font-size:11px; font-weight:700;">
+      <span class="row-label">Tunai</span>
+      <span class="row-value">${formatCurrency(receipt.cashReceived)}</span>
+    </div>
+    <div class="row" style="font-size:12px; font-weight:900;">
+      <span class="row-label">Kembali</span>
+      <span class="row-value">${formatCurrency(receipt.change ?? 0)}</span>
+    </div>` : ''}
+    <div class="divider"></div>
+    <div class="center" style="font-size:9px; font-weight:700; margin-top:2px;">
+      --- Terima Kasih Sudah Berbelanja ---
+    </div>
+  </body>
+</html>`
 }
 
 export async function printReceipt(receipt: ReceiptData) {
