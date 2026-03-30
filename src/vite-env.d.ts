@@ -4,6 +4,7 @@ interface PrinterSettings {
 	defaultPrinterName: string
 	autoPrintReceipts: boolean
 	silentPrint: boolean
+	receiptWidthMm: number
 }
 
 interface PrinterSummary {

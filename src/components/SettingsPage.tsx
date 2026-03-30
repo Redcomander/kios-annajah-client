@@ -14,6 +14,7 @@ export const SettingsPage = () => {
         defaultPrinterName: '',
         autoPrintReceipts: false,
         silentPrint: false,
+        receiptWidthMm: 58,
     })
     const [printers, setPrinters] = useState<PrinterSummary[]>([])
     const [printerLoading, setPrinterLoading] = useState(false)
@@ -282,6 +283,19 @@ export const SettingsPage = () => {
                                     <div className="text-xs text-gray-500 mt-1">Lewati dialog print dan kirim langsung ke printer yang dipilih. Gunakan ini setelah printer default sudah benar.</div>
                                 </div>
                             </label>
+
+                            <div className="rounded-xl border border-gray-200 px-4 py-3">
+                                <div className="text-sm font-bold text-gray-800 mb-2">Lebar Kertas Thermal</div>
+                                <select
+                                    value={printerSettings.receiptWidthMm}
+                                    onChange={(e) => setPrinterSettings((prev) => ({ ...prev, receiptWidthMm: Number(e.target.value) === 80 ? 80 : 58 }))}
+                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-indigo-400"
+                                >
+                                    <option value={58}>58 mm</option>
+                                    <option value={80}>80 mm</option>
+                                </select>
+                                <p className="mt-2 text-xs text-gray-500">Pilih 58 mm untuk kebanyakan printer thermal mini. Pilih 80 mm jika struk terlalu kecil atau terpotong.</p>
+                            </div>
 
                             {printerError && (
                                 <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm font-bold border border-red-100">

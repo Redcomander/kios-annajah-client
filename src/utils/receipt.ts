@@ -26,7 +26,8 @@ const escapeHtml = (value: string) => value
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;')
 
-export function renderReceiptHtml(receipt: ReceiptData) {
+export function renderReceiptHtml(receipt: ReceiptData, receiptWidthMm = 58) {
+  const safeWidthMm = receiptWidthMm === 80 ? 80 : 58
   const itemsHtml = receipt.items
     .map(
       (item) => `
@@ -45,13 +46,15 @@ export function renderReceiptHtml(receipt: ReceiptData) {
         <meta charset="utf-8" />
         <title>Receipt ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</title>
         <style>
-          body { font-family: Arial, sans-serif; padding: 16px; color: #111827; }
-          .wrap { max-width: 320px; margin: 0 auto; }
-          h1 { font-size: 18px; margin: 0 0 4px; }
-          .muted { color: #6b7280; font-size: 12px; }
+          @page { size: ${safeWidthMm}mm auto; margin: 2mm; }
+          * { box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #111827; width: ${safeWidthMm - 4}mm; }
+          .wrap { width: 100%; margin: 0; }
+          h1 { font-size: 14px; margin: 0 0 3px; }
+          .muted { color: #4b5563; font-size: 10px; line-height: 1.3; }
           table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          .divider { border-top: 1px dashed #9ca3af; margin: 12px 0; }
-          .total { font-size: 16px; font-weight: 700; }
+          .divider { border-top: 1px dashed #6b7280; margin: 8px 0; }
+          .total { font-size: 13px; font-weight: 700; }
         </style>
       </head>
       <body>
@@ -92,7 +95,19 @@ export function renderReceiptHtml(receipt: ReceiptData) {
 }
 
 export async function printReceipt(receipt: ReceiptData) {
-  const html = renderReceiptHtml(receipt)
+  let receiptWidthMm = 58
+  try {
+    if (window.desktopApp?.getPrinterSettings) {
+      const settings = await window.desktopApp.getPrinterSettings()
+      if (settings.receiptWidthMm === 80) {
+        receiptWidthMm = 80
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read printer settings, using 58mm default.', error)
+  }
+
+  const html = renderReceiptHtml(receipt, receiptWidthMm)
 
   if (window.desktopApp?.printHTML) {
     try {

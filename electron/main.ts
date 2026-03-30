@@ -34,6 +34,7 @@ type PrinterSettings = {
   defaultPrinterName: string
   autoPrintReceipts: boolean
   silentPrint: boolean
+  receiptWidthMm: number
 }
 
 type PrinterSummary = {
@@ -48,6 +49,7 @@ const defaultPrinterSettings: PrinterSettings = {
   defaultPrinterName: '',
   autoPrintReceipts: false,
   silentPrint: false,
+  receiptWidthMm: 58,
 }
 
 function delay(ms: number) {
@@ -120,10 +122,12 @@ function readPrinterSettings(): PrinterSettings {
     }
 
     const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Partial<PrinterSettings>
+    const parsedWidth = Number(parsed.receiptWidthMm)
     return {
       defaultPrinterName: typeof parsed.defaultPrinterName === 'string' ? parsed.defaultPrinterName : '',
       autoPrintReceipts: Boolean(parsed.autoPrintReceipts),
       silentPrint: Boolean(parsed.silentPrint),
+      receiptWidthMm: parsedWidth === 80 ? 80 : 58,
     }
   } catch (error) {
     console.error('[desktop] failed to read printer settings', error)
@@ -203,6 +207,7 @@ async function startBackend() {
 
 async function printHTML(payload: { html: string; title?: string }) {
 	const printerSettings = readPrinterSettings()
+  const receiptWidthMm = printerSettings.receiptWidthMm === 80 ? 80 : 58
   const printWindow = new BrowserWindow({
     show: false,
     autoHideMenuBar: true,
@@ -218,12 +223,27 @@ async function printHTML(payload: { html: string; title?: string }) {
 
     await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(payload.html)}`)
 
+    const contentHeightPx = await printWindow.webContents
+      .executeJavaScript('Math.max(document.body?.scrollHeight || 0, document.documentElement?.scrollHeight || 0)', true)
+      .catch(() => 0)
+
+    const widthMicrons = receiptWidthMm * 1000
+    const heightMicrons = Math.max(50000, Math.ceil(Number(contentHeightPx || 0) * 264.583 + 4000))
+
     return await new Promise<boolean>((resolve, reject) => {
       printWindow.webContents.print(
         {
           printBackground: true,
           silent: printerSettings.silentPrint,
           deviceName: printerSettings.defaultPrinterName || undefined,
+          pageSize: {
+            width: widthMicrons,
+            height: heightMicrons,
+          },
+          margins: {
+            marginType: 'none',
+          },
+          landscape: false,
         },
         (success, failureReason) => {
           printWindow.close()
