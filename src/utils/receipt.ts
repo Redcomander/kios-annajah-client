@@ -46,9 +46,9 @@ export function renderReceiptHtml(receipt: ReceiptData, receiptWidthMm = 58) {
         <meta charset="utf-8" />
         <title>Receipt ${receipt.transactionId ? `#${receipt.transactionId}` : ''}</title>
         <style>
-          @page { size: ${safeWidthMm}mm auto; margin: 2mm; }
+          @page { size: ${safeWidthMm}mm auto; margin: 0; }
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; color: #111827; width: ${safeWidthMm - 4}mm; }
+          body { font-family: Arial, sans-serif; margin: 0; padding: 2mm; color: #111827; width: ${safeWidthMm - 4}mm; }
           .wrap { width: 100%; margin: 0; }
           h1 { font-size: 14px; margin: 0 0 3px; }
           .muted { color: #4b5563; font-size: 10px; line-height: 1.3; }
@@ -108,7 +108,6 @@ export async function printReceipt(receipt: ReceiptData) {
   }
 
   const html = renderReceiptHtml(receipt, receiptWidthMm)
-
   if (window.desktopApp?.printHTML) {
     try {
       return await window.desktopApp.printHTML({

@@ -209,6 +209,7 @@ async function printHTML(payload: { html: string; title?: string }) {
 	const printerSettings = readPrinterSettings()
   const receiptWidthMm = printerSettings.receiptWidthMm === 80 ? 80 : 58
   const approxWidthPx = Math.max(220, Math.round((receiptWidthMm / 25.4) * 96) + 32)
+
   const printWindow = new BrowserWindow({
     show: false,
     width: approxWidthPx,
