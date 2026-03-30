@@ -268,11 +268,6 @@ async function printHTML(payload: { html: string; title?: string }) {
     }
 
     try {
-      if (printerSettings.silentPrint) {
-        // Compatibility-first path: many thermal drivers only work in silent mode with minimal options.
-        return await attemptPrint(commonOptions)
-      }
-
       return await attemptPrint({
         ...commonOptions,
         pageSize: {
@@ -288,16 +283,9 @@ async function printHTML(payload: { html: string; title?: string }) {
         throw primaryError
       }
 
-      // Fallback for silent mode when minimal options fail.
+      // Fallback for silent mode: retry without explicit pageSize.
       return await attemptPrint({
         ...commonOptions,
-        pageSize: {
-          width: widthMicrons,
-          height: heightMicrons,
-        },
-        margins: {
-          marginType: 'none',
-        },
       })
     }
   } catch (error) {
