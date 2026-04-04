@@ -328,38 +328,40 @@ export const Reports = () => {
             </div>
 
             {/* Chart */}
-            <div className="flex-1 min-h-[300px] border border-gray-100 rounded-2xl p-4">
+            <div className="flex-1 min-h-[320px] min-w-0 border border-gray-100 rounded-2xl p-4">
                 <h3 className="font-bold text-gray-700 mb-4">Grafik Penjualan</h3>
                 {loading && <div className="text-sm font-medium text-gray-400 mb-3">Memuat laporan...</div>}
-                <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={safeData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                        <XAxis 
-                            dataKey="date" 
-                            axisLine={false} 
-                            tickLine={false} 
-                            tick={{fill: '#9CA3AF', fontSize: 12}} 
-                            dy={10}
-                        />
-                        <YAxis 
-                            axisLine={false} 
-                            tickLine={false} 
-                            tick={{fill: '#9CA3AF', fontSize: 12}} 
-                            tickFormatter={(val) => `Rp ${val/1000}k`}
-                        />
-                        <Tooltip 
-                            cursor={{fill: '#F3F4F6'}}
-                            contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                            formatter={(value) => formatRupiah(Number(value ?? 0))}
-                        />
-                        <Bar 
-                            dataKey="total" 
-                            fill="#4F46E5" 
-                            radius={[4, 4, 0, 0]}
-                            barSize={40}
-                        />
-                    </BarChart>
-                </ResponsiveContainer>
+                <div className="h-[320px] w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={280}>
+                        <BarChart data={safeData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                            <XAxis 
+                                dataKey="date" 
+                                axisLine={false} 
+                                tickLine={false} 
+                                tick={{fill: '#9CA3AF', fontSize: 12}} 
+                                dy={10}
+                            />
+                            <YAxis 
+                                axisLine={false} 
+                                tickLine={false} 
+                                tick={{fill: '#9CA3AF', fontSize: 12}} 
+                                tickFormatter={(val) => `Rp ${val/1000}k`}
+                            />
+                            <Tooltip 
+                                cursor={{fill: '#F3F4F6'}}
+                                contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                formatter={(value) => formatRupiah(Number(value ?? 0))}
+                            />
+                            <Bar 
+                                dataKey="total" 
+                                fill="#4F46E5" 
+                                radius={[4, 4, 0, 0]}
+                                barSize={40}
+                            />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
             </div>
             </>)}
 

@@ -30,7 +30,7 @@ interface POSPageProps {
     products: Product[];
     addToCart: (product: any) => void;
     updateQty: (id: number, delta: number) => void;
-    handleCheckout: (paymentMethod: string, cashReceived?: number, referenceNumber?: string) => Promise<{ ok: boolean; message: string; transactionId?: number; receipt?: ReceiptData }>;
+    handleCheckout: (paymentMethod: string, cashReceived?: number, referenceNumber?: string, creditInfo?: { customerName: string; waNumber: string }) => Promise<{ ok: boolean; message: string; transactionId?: number; receipt?: ReceiptData }>;
     total: number;
     search: string;
     onSearchInput: (s: string) => void;
@@ -66,9 +66,11 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
 
     const [isConfirmOpen, setIsConfirmOpen] = useState(false)
     const [isProcessing, setIsProcessing] = useState(false)
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'qris'>('cash')
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer' | 'qris' | 'kredit'>('cash')
     const [cashReceived, setCashReceived] = useState('')
     const [referenceNumber, setReferenceNumber] = useState('')
+    const [creditName, setCreditName] = useState('')
+    const [creditWa, setCreditWa] = useState('')
     const [resultModal, setResultModal] = useState<{ open: boolean; ok: boolean; message: string; receipt?: ReceiptData }>({
         open: false,
         ok: false,
@@ -106,11 +108,14 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
         setIsProcessing(true)
         const parsedCash = paymentMethod === 'cash' && cashReceived ? parseFloat(cashReceived.replace(/\D/g, '')) : undefined
         const ref = (paymentMethod === 'transfer' || paymentMethod === 'qris') && referenceNumber.trim() ? referenceNumber.trim() : undefined
-        const result = await handleCheckout(paymentMethod, parsedCash, ref)
+        const credit = paymentMethod === 'kredit' ? { customerName: creditName.trim(), waNumber: creditWa.trim() } : undefined
+        const result = await handleCheckout(paymentMethod, parsedCash, ref, credit)
         setIsProcessing(false)
         setIsConfirmOpen(false)
         setCashReceived('')
         setReferenceNumber('')
+        setCreditName('')
+        setCreditWa('')
         setResultModal({ open: true, ok: result.ok, message: result.message, receipt: result.receipt })
     }
 
@@ -273,17 +278,18 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                         </div>
                         <div>
                             <div className="text-sm text-gray-500 mb-2">Metode Pembayaran</div>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 gap-2">
                                 {[
                                     { value: 'cash', label: 'Cash' },
                                     { value: 'transfer', label: 'Transfer' },
                                     { value: 'qris', label: 'QRIS' },
+                                    { value: 'kredit', label: 'Bayar Nanti' },
                                 ].map((method) => (
                                     <button
                                         key={method.value}
                                         type="button"
-                                        onClick={() => setPaymentMethod(method.value as 'cash' | 'transfer' | 'qris')}
-                                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${paymentMethod === method.value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:text-indigo-600'}`}
+                                        onClick={() => setPaymentMethod(method.value as 'cash' | 'transfer' | 'qris' | 'kredit')}
+                                        className={`rounded-xl border px-3 py-2 text-sm font-bold transition-colors ${paymentMethod === method.value ? (method.value === 'kredit' ? 'border-orange-500 bg-orange-500 text-white' : 'border-indigo-600 bg-indigo-600 text-white') : 'border-gray-200 bg-white text-gray-600 hover:border-indigo-200 hover:text-indigo-600'}`}
                                     >
                                         {method.label}
                                     </button>
@@ -325,6 +331,33 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                                 />
                             </div>
                         )}
+                        {paymentMethod === 'kredit' && (
+                            <div className="space-y-3 p-3 rounded-xl bg-orange-50 border border-orange-200">
+                                <div className="text-sm font-bold text-orange-700 flex items-center gap-2">
+                                    ⚠️ Bayar Nanti — jatuh tempo 7 hari
+                                </div>
+                                <div>
+                                    <label className="text-sm text-gray-600 block mb-1 font-semibold">Nama Pelanggan <span className="text-red-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        value={creditName}
+                                        onChange={(e) => setCreditName(e.target.value)}
+                                        placeholder="Contoh: Budi Santoso"
+                                        className="w-full bg-white border border-orange-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm text-gray-600 block mb-1 font-semibold">Nomor WhatsApp</label>
+                                    <input
+                                        type="tel"
+                                        value={creditWa}
+                                        onChange={(e) => setCreditWa(e.target.value)}
+                                        placeholder="Contoh: 08123456789"
+                                        className="w-full bg-white border border-orange-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                        )}
                         <div className="flex justify-between text-lg font-bold text-indigo-600">
                             <span>Total Bayar</span>
                             <span>Rp {total.toLocaleString('id-ID')}</span>
@@ -340,11 +373,11 @@ export const POSPage = ({ cart, products, addToCart, updateQty, handleCheckout, 
                             Batal
                         </button>
                         <button
-                            disabled={isProcessing || (paymentMethod === 'cash' && cashReceived !== '' && Number(cashReceived) < total)}
+                            disabled={isProcessing || (paymentMethod === 'cash' && cashReceived !== '' && Number(cashReceived) < total) || (paymentMethod === 'kredit' && creditName.trim() === '')}
                             onClick={onConfirmCheckout}
-                            className="px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 disabled:opacity-70"
+                            className={`px-4 py-2.5 rounded-xl text-white font-bold shadow-lg disabled:opacity-70 ${paymentMethod === 'kredit' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-200' : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200'}`}
                         >
-                            {isProcessing ? 'Memproses...' : 'Konfirmasi Bayar'}
+                            {isProcessing ? 'Memproses...' : paymentMethod === 'kredit' ? 'Simpan Hutang' : 'Konfirmasi Bayar'}
                         </button>
                     </div>
                 </div>

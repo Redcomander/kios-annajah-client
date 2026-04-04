@@ -8,6 +8,8 @@ import { UserList } from './components/UserList'
 import { SettingsPage } from './components/SettingsPage'
 import { ActivityLog } from './components/ActivityLog'
 import { DigitalTransactionRecorder } from './components/DigitalTransactionRecorder'
+import { HutangList } from './components/HutangList'
+import { OperationalNotes } from './components/OperationalNotes'
 import { 
   Squares2X2Icon, 
   ArchiveBoxIcon, 
@@ -17,7 +19,9 @@ import {
   Cog6ToothIcon, 
   ArrowLeftOnRectangleIcon,
   ClipboardDocumentListIcon,
-  DevicePhoneMobileIcon
+  DevicePhoneMobileIcon,
+  BanknotesIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/solid'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LoginPage } from './pages/LoginPage'
@@ -84,6 +88,7 @@ const ProtectedApp = () => {
     const [apiSourceLabel] = useState(getApiSourceLabel())
     const [isDesktop, setIsDesktop] = useState(false)
     const [isFullscreen, setIsFullscreen] = useState(false)
+    const [hutangOverdueCount, setHutangOverdueCount] = useState(0)
 
     // Fetch Products from Go Backend — always, so low-stock badge stays live
     const fetchProducts = useCallback(() => {
@@ -102,6 +107,22 @@ const ProtectedApp = () => {
     useEffect(() => {
       if (activeTab === 'pos' || activeTab === 'products') fetchProducts()
     }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Fetch hutang overdue count for sidebar badge
+    const fetchHutangCount = useCallback(() => {
+      fetch(buildApiUrl('/api/credits'), { headers: { 'Authorization': `Bearer ${token}` } })
+        .then(r => r.json())
+        .then((data: Array<{ is_paid: boolean; is_overdue: boolean }>) => {
+          if (Array.isArray(data)) setHutangOverdueCount(data.filter(c => !c.is_paid && c.is_overdue).length)
+        })
+        .catch(() => {})
+    }, [token])
+
+    useEffect(() => {
+      fetchHutangCount()
+      const interval = setInterval(fetchHutangCount, 120_000)
+      return () => clearInterval(interval)
+    }, [fetchHutangCount])
 
     const lowStockCount = useMemo(() => products.filter(p => p.low_stock).length, [products])
 
@@ -200,7 +221,7 @@ const ProtectedApp = () => {
       p.barcode?.toLowerCase().includes(search.toLowerCase())
     )
 
-    const handleCheckout = async (paymentMethod: string, cashReceived?: number, referenceNumber?: string): Promise<CheckoutResult> => {
+    const handleCheckout = async (paymentMethod: string, cashReceived?: number, referenceNumber?: string, creditInfo?: { customerName: string; waNumber: string }): Promise<CheckoutResult> => {
       if (cart.length === 0) {
         return { ok: false, message: 'Keranjang masih kosong.' }
       }
@@ -215,7 +236,9 @@ const ProtectedApp = () => {
                 product_name: item.name,
                 price: item.price,
                 qty: item.qty
-            }))
+            })),
+            customer_name: creditInfo?.customerName ?? '',
+            wa_number: creditInfo?.waNumber ?? '',
         }
 
         try {
@@ -308,6 +331,8 @@ const ProtectedApp = () => {
           {ENABLE_POS && <NavButton active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} icon={<Squares2X2Icon className="h-6 w-6" />} label="POS" />}
           <NavButton active={activeTab === 'products'} onClick={() => setActiveTab('products')} icon={<ArchiveBoxIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Stok' : 'Produk'} badge={lowStockCount} />
           <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Transaksi' : 'Riwayat'} />
+          {ENABLE_POS && <NavButton active={activeTab === 'hutang'} onClick={() => setActiveTab('hutang')} icon={<BanknotesIcon className="h-6 w-6" />} label="Hutang" badge={hutangOverdueCount} />}
+          <NavButton active={activeTab === 'operational'} onClick={() => setActiveTab('operational')} icon={<DocumentTextIcon className="h-6 w-6" />} label="Operasional" />
           <NavButton active={activeTab === 'digital'} onClick={() => setActiveTab('digital')} icon={<DevicePhoneMobileIcon className="h-6 w-6" />} label="Pulsa/Data" />
           <NavButton active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={<ChartBarIcon className="h-6 w-6" />} label="Laporan" />
           
@@ -351,6 +376,10 @@ const ProtectedApp = () => {
                             ? (MONITORING_MODE ? 'Monitoring Transaksi' : 'Riwayat Transaksi')
                             : activeTab === 'digital'
                               ? 'Pencatatan Pulsa & Paket Data'
+                            : activeTab === 'hutang'
+                              ? 'Hutang / Bayar Nanti'
+                            : activeTab === 'operational'
+                              ? 'Catatan Operasional'
                             : activeTab === 'reports'
                               ? (MONITORING_MODE ? 'Monitoring Laporan' : 'Laporan Penjualan')
                               : activeTab === 'activity'
@@ -408,6 +437,8 @@ const ProtectedApp = () => {
            {activeTab === 'products' && <ProductList />}
            {activeTab === 'history' && <TransactionList />}
            {activeTab === 'digital' && <DigitalTransactionRecorder />}
+           {activeTab === 'hutang' && <HutangList />}
+           {activeTab === 'operational' && <OperationalNotes />}
            {activeTab === 'reports' && <Reports />}
            {activeTab === 'users' && user?.role === 'admin' && <UserList />}
            {activeTab === 'activity' && user?.role === 'admin' && <ActivityLog />}

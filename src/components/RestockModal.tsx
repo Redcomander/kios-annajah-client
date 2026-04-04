@@ -27,6 +27,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
     const [searchResults, setSearchResults] = useState<Product[]>([])
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [addQty, setAddQty] = useState<string>('')
+    const [inputtedAt, setInputtedAt] = useState('')
     const [expiredAt, setExpiredAt] = useState('')
     const [sellPrice, setSellPrice] = useState('')
     const [costPrice, setCostPrice] = useState('')
@@ -35,6 +36,8 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
     
     const inputRef = useRef<HTMLInputElement>(null)
     const qtyInputRef = useRef<HTMLInputElement>(null)
+
+    const todayDate = () => new Date().toISOString().slice(0, 10)
 
     // Auto-focus input when modal opens or reset
     useEffect(() => {
@@ -62,6 +65,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         if (exactMatch) {
             setSelectedProduct(exactMatch)
             setAddQty('')
+            setInputtedAt(todayDate())
             setExpiredAt('')
             setSellPrice(exactMatch.price != null ? String(exactMatch.price) : '')
             setCostPrice(exactMatch.cost_price != null ? String(exactMatch.cost_price) : '')
@@ -76,6 +80,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
         } else if (nameMatches.length === 1) {
             setSelectedProduct(nameMatches[0])
             setAddQty('')
+            setInputtedAt(todayDate())
             setExpiredAt('')
             setSellPrice(nameMatches[0].price != null ? String(nameMatches[0].price) : '')
             setCostPrice(nameMatches[0].cost_price != null ? String(nameMatches[0].cost_price) : '')
@@ -88,6 +93,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
     const selectFromList = (product: Product) => {
         setSelectedProduct(product)
         setAddQty('')
+        setInputtedAt(todayDate())
         setExpiredAt('')
         setSellPrice(product.price != null ? String(product.price) : '')
         setCostPrice(product.cost_price != null ? String(product.cost_price) : '')
@@ -105,8 +111,9 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
             return
         }
 
-        const payload: { qty: number; expired_at: string; price?: number; cost_price?: number } = {
+        const payload: { qty: number; inputted_at: string; expired_at: string; price?: number; cost_price?: number } = {
             qty: qtyToAdd,
+            inputted_at: inputtedAt,
             expired_at: expiredAt === '0001-01-01' ? '' : expiredAt,
         }
 
@@ -145,6 +152,7 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                 setSelectedProduct(null)
                 setQuery('')
                 setAddQty('')
+                setInputtedAt(todayDate())
                 setExpiredAt('')
                 setSellPrice('')
                 setCostPrice('')
@@ -267,6 +275,17 @@ export const RestockModal = ({ isOpen, onClose, products, onSuccess }: RestockMo
                                     min="1"
                                     step="0.01"
                                 />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-gray-700 mb-2">Tanggal Input Batch</label>
+                                <input
+                                    type="date"
+                                    value={inputtedAt}
+                                    onChange={(e) => setInputtedAt(e.target.value)}
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                                <p className="text-xs text-gray-400 mt-1">Dipakai untuk warning tidak laku 30 hari.</p>
                             </div>
 
                             <div>

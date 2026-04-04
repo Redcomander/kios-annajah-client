@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ClipboardDocumentIcon, CheckCircleIcon, ExclamationCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon, PhotoIcon, TrashIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/solid'
+import { ClipboardDocumentIcon, CheckCircleIcon, ArrowDownTrayIcon, ArrowPathIcon, FunnelIcon, PhotoIcon, TrashIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/solid'
 import { useAuth } from '../context/AuthContext'
 import { buildApiUrl, buildAssetUrl } from '../config/api'
 import { downloadApiFile } from '../utils/download'
 
 type DigitalStatus = 'pending' | 'success' | 'failed'
-type DigitalType = 'pulsa' | 'paket_data' | 'ewallet_topup' | 'pln_token' | 'bill_payment' | 'voucher_game' | 'emoney_topup' | 'other'
+type DigitalType = 'pulsa' | 'paket_data' | 'ewallet_topup' | 'pln_token' | 'bill_payment' | 'voucher_game' | 'emoney_topup' | 'topup_saldo_fee' | 'other'
 type InputSource = 'manual' | 'assisted'
 
 const DEFAULT_TRANSACTION_TYPE_OPTIONS: Array<{ value: DigitalType; label: string }> = [
@@ -16,6 +16,7 @@ const DEFAULT_TRANSACTION_TYPE_OPTIONS: Array<{ value: DigitalType; label: strin
   { value: 'bill_payment', label: 'Tagihan' },
   { value: 'voucher_game', label: 'Voucher/Game' },
   { value: 'emoney_topup', label: 'Top Up E-Money' },
+  { value: 'topup_saldo_fee', label: 'Biaya Top Up Saldo' },
   { value: 'other', label: 'Lainnya' },
 ]
 
@@ -126,7 +127,7 @@ const initialForm: FormState = {
   fee: '0',
   admin_fee: '0',
   commission: '0',
-  status: 'pending',
+  status: 'success',
   source: 'manual',
   mitra_ref: '',
   failure_reason: '',
@@ -188,6 +189,7 @@ const parseDestinationIdentifier = (text: string): string => {
 
 const detectTransactionType = (text: string): DigitalType => {
   const lower = text.toLowerCase()
+  if (/(biaya\s*top\s*up\s*saldo|top\s*up\s*saldo|admin\s*top\s*up\s*saldo)/i.test(lower)) return 'topup_saldo_fee'
   if (/(paket\s*data|kuota|data\s*package|internet)/i.test(lower)) return 'paket_data'
   if (/(dana|ovo|gopay|linkaja|shopeepay)/i.test(lower)) return 'ewallet_topup'
   if (/(token\s*pln|token\s*listrik|pln\s*token|listrik\s*prabayar)/i.test(lower)) return 'pln_token'
@@ -242,18 +244,13 @@ const parseProductName = (text: string): string => {
 }
 
 const parseMitraText = (text: string): Partial<FormState> => {
-  const lower = text.toLowerCase()
   const refMatch = text.match(/(?:ref|trx|transaksi|id)\s*[:#-]?\s*([a-z0-9-]{5,})/i)
   const serialMatch = text.match(/serial\s*[:#-]?\s*([a-z0-9-]{6,})/i)
   const amount = parseReceiptAmount(text)
   const productName = parseProductName(text)
   const provider = detectProvider(text)
 
-  const status: DigitalStatus = lower.includes('berhasil') || lower.includes('sukses')
-    ? 'success'
-    : lower.includes('gagal') || lower.includes('failed')
-      ? 'failed'
-      : 'pending'
+  const status: DigitalStatus = 'success'
 
   const transactionType = detectTransactionType(text)
 
@@ -266,7 +263,7 @@ const parseMitraText = (text: string): Partial<FormState> => {
     sell_price: amount != null ? String(amount) : '',
     status,
     source: 'assisted',
-    failure_reason: status === 'failed' ? 'provider_rejected' : '',
+    failure_reason: '',
     ocr_text: text.trim(),
     notes: text.trim(),
   }
@@ -296,6 +293,9 @@ export const DigitalTransactionRecorder = () => {
   const [filterProvider, setFilterProvider] = useState('')
   const [filterMitraRef, setFilterMitraRef] = useState('')
   const [includeVoided, setIncludeVoided] = useState(false)
+  const [voidTargetId, setVoidTargetId] = useState<number | null>(null)
+  const [voidReason, setVoidReason] = useState('')
+  const [voidSubmitting, setVoidSubmitting] = useState(false)
   const [selectedDetail, setSelectedDetail] = useState<DigitalTransactionDetailResponse | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState('')
@@ -397,8 +397,17 @@ export const DigitalTransactionRecorder = () => {
     if (Number.isNaN(buy) || Number.isNaN(sell) || Number.isNaN(fee) || Number.isNaN(adminFee) || Number.isNaN(commission)) {
       return 0
     }
+
+    if (form.transaction_type === 'topup_saldo_fee') {
+      const expenseBase = sell > 0 ? sell : buy
+      const expense = Math.abs(expenseBase + fee + adminFee)
+      return -expense + commission
+    }
+
     return sell - buy - fee - adminFee + commission
-  }, [form.buy_price, form.sell_price, form.fee, form.admin_fee, form.commission])
+  }, [form.buy_price, form.sell_price, form.fee, form.admin_fee, form.commission, form.transaction_type])
+
+  const isTopupSaldoFee = form.transaction_type === 'topup_saldo_fee'
 
   const uploadReceipt = async (file: File) => {
     if (!token) {
@@ -424,47 +433,17 @@ export const DigitalTransactionRecorder = () => {
   const saveTransaction = async () => {
     if (!token) return
 
-    if (!form.provider.trim()) {
-      setError('Provider wajib diisi.')
+    const buyPrice = Number(form.buy_price || 0)
+    const sellPrice = Number(form.sell_price || 0)
+    const fee = Number(form.fee || 0)
+    const adminFee = Number(form.admin_fee || 0)
+    const commission = Number(form.commission || 0)
+    if (buyPrice < 0 || sellPrice < 0 || fee < 0 || adminFee < 0 || commission < 0) {
+      setError('Angka nominal tidak boleh negatif.')
       return
     }
 
     const normalizedNumber = normalizeCustomerNumber(form.customer_number)
-    if (!normalizedNumber || normalizedNumber.length < 10) {
-      setError('Tujuan / ID pelanggan wajib diisi.')
-      return
-    }
-
-    if (!form.product_name.trim()) {
-      setError('Produk/nominal wajib diisi.')
-      return
-    }
-
-    if (!form.mitra_ref.trim()) {
-      setError('Ref Mitra wajib diisi.')
-      return
-    }
-
-    if (!form.receipt_image.trim()) {
-      setError('Bukti transaksi wajib diupload.')
-      return
-    }
-
-    const buyPrice = Number(form.buy_price || 0)
-    const sellPrice = Number(form.sell_price || 0)
-    if (buyPrice <= 0 || sellPrice <= 0) {
-      setError('Harga modal dan harga jual wajib > 0.')
-      return
-    }
-
-    if (form.status === 'failed' && !form.failure_reason.trim()) {
-      setError('Alasan gagal wajib diisi ketika status failed.')
-      return
-    }
-    if (form.status === 'failed' && !failureReasonOptions.some((item) => item.value === form.failure_reason.trim())) {
-      setError('Kode alasan gagal tidak valid.')
-      return
-    }
 
     setSaving(true)
     setError('')
@@ -476,15 +455,16 @@ export const DigitalTransactionRecorder = () => {
         provider: form.provider.trim(),
         product_name: form.product_name.trim(),
         mitra_ref: form.mitra_ref.trim().toUpperCase(),
-        failure_reason: form.status === 'failed' ? form.failure_reason.trim() : '',
+        status: 'success' as DigitalStatus,
+        failure_reason: '',
         receipt_image: form.receipt_image.trim(),
         ocr_text: form.ocr_text.trim(),
         notes: form.notes.trim(),
         buy_price: buyPrice,
         sell_price: sellPrice,
-        fee: Number(form.fee || 0),
-        admin_fee: Number(form.admin_fee || 0),
-        commission: Number(form.commission || 0),
+        fee,
+        admin_fee: adminFee,
+        commission,
       }
 
       const res = await authorizedFetch('/api/digital-transactions', {
@@ -604,22 +584,12 @@ export const DigitalTransactionRecorder = () => {
   const updateStatus = async (id: number, status: DigitalStatus) => {
     if (!token) return
 
-    let failureReason = ''
-    if (status === 'failed') {
-      const value = window.prompt(`Kode alasan gagal wajib. Pilih: ${failureReasonOptions.map((item) => item.value).join(', ')}`, 'provider_rejected')
-      if (value === null) {
-        return
-      }
-      failureReason = value.trim().toLowerCase()
-      if (!failureReason) {
-        setError('Alasan gagal wajib diisi.')
-        return
-      }
-      if (!failureReasonOptions.some((item) => item.value === failureReason)) {
-        setError('Kode alasan gagal tidak valid.')
-        return
-      }
+    if (status !== 'success') {
+      setError('Status transaksi digital Mitra hanya bisa success.')
+      return
     }
+
+    const failureReason = ''
 
     try {
       const res = await authorizedFetch(`/api/digital-transactions/${id}/status`, {
@@ -665,21 +635,33 @@ export const DigitalTransactionRecorder = () => {
     }
   }
 
-  const voidTransaction = async (id: number) => {
-    if (!token) return
+  const openVoidDialog = (id: number) => {
+    setError('')
+    setVoidTargetId(id)
+    setVoidReason('')
+  }
 
-    const reason = window.prompt('Alasan void (wajib):', '')
-    if (reason === null) {
+  const closeVoidDialog = () => {
+    if (voidSubmitting) return
+    setVoidTargetId(null)
+    setVoidReason('')
+  }
+
+  const confirmVoidTransaction = async () => {
+    if (!token) return
+    if (voidTargetId === null) {
       return
     }
-    const trimmedReason = reason.trim()
+
+    const trimmedReason = voidReason.trim()
     if (!trimmedReason) {
       setError('Alasan void wajib diisi.')
       return
     }
 
+    setVoidSubmitting(true)
     try {
-      const res = await authorizedFetch(`/api/digital-transactions/${id}/void`, {
+      const res = await authorizedFetch(`/api/digital-transactions/${voidTargetId}/void`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -693,10 +675,14 @@ export const DigitalTransactionRecorder = () => {
         return
       }
 
+      setVoidTargetId(null)
+      setVoidReason('')
       await fetchRows()
     } catch (err) {
       console.error(err)
       setError('Gagal void transaksi.')
+    } finally {
+      setVoidSubmitting(false)
     }
   }
 
@@ -772,7 +758,7 @@ export const DigitalTransactionRecorder = () => {
             </button>
 
             <p className="text-[11px] text-indigo-700/80">Bisa pakai screenshot struk Mitra Bukalapak seperti contoh yang kamu kirim.</p>
-            <p className="text-[11px] text-emerald-700/80">{form.receipt_image ? 'Bukti transaksi sudah tersimpan.' : 'Upload bukti transaksi wajib sebelum simpan.'}</p>
+            <p className="text-[11px] text-emerald-700/80">{form.receipt_image ? 'Bukti transaksi sudah tersimpan.' : 'Bukti transaksi opsional.'}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -789,29 +775,21 @@ export const DigitalTransactionRecorder = () => {
             </label>
 
             <label className="text-xs font-bold text-gray-600">Status
-              <select
-                value={form.status}
-                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as DigitalStatus }))}
-                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="pending">Pending</option>
-                <option value="success">Success</option>
-                <option value="failed">Failed</option>
-              </select>
+              <div className="mt-1 w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">Success</div>
             </label>
           </div>
 
           <input
             value={form.customer_number}
             onChange={(e) => setForm((p) => ({ ...p, customer_number: e.target.value }))}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Tujuan / ID pelanggan / nomor meter / nomor HP"
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${isTopupSaldoFee ? 'border-red-200 bg-red-50/40' : 'border-gray-300'}`}
+            placeholder={isTopupSaldoFee ? 'Tujuan opsional (kosongkan jika tidak ada pelanggan)' : 'Tujuan / ID pelanggan / nomor meter / nomor HP'}
           />
 
           <select
             value={form.provider}
             onChange={(e) => setForm((p) => ({ ...p, provider: e.target.value }))}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${isTopupSaldoFee ? 'border-red-200 bg-red-50/40' : 'border-gray-300'}`}
           >
             <option value="">Pilih provider</option>
             {providerOptions.map((provider) => (
@@ -822,48 +800,84 @@ export const DigitalTransactionRecorder = () => {
           <input
             value={form.product_name}
             onChange={(e) => setForm((p) => ({ ...p, product_name: e.target.value }))}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            placeholder="Produk/Nominal (Pulsa 25K / DANA 50K / Token PLN 100K / BPJS)"
+            className={`w-full rounded-lg border px-3 py-2 text-sm ${isTopupSaldoFee ? 'border-red-200 bg-red-50/40' : 'border-gray-300'}`}
+            placeholder={isTopupSaldoFee ? 'Keterangan top up (contoh: Top Up Saldo Mitra 1 Juta)' : 'Produk/Nominal (Pulsa 25K / DANA 50K / Token PLN 100K / BPJS)'}
           />
 
-          <div className="grid grid-cols-2 gap-3">
-            <input
-              value={form.buy_price}
-              onChange={(e) => setForm((p) => ({ ...p, buy_price: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Harga modal"
-            />
-            <input
-              value={form.sell_price}
-              onChange={(e) => setForm((p) => ({ ...p, sell_price: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Harga jual"
-            />
-          </div>
+          {isTopupSaldoFee ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 space-y-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-red-700">Mode Biaya Top Up Saldo (Expense)</div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={form.sell_price}
+                  onChange={(e) => setForm((p) => ({ ...p, sell_price: e.target.value }))}
+                  className="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Nominal top up"
+                />
+                <input
+                  value={form.admin_fee}
+                  onChange={(e) => setForm((p) => ({ ...p, admin_fee: e.target.value }))}
+                  className="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Biaya admin"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={form.fee}
+                  onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
+                  className="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Biaya lain"
+                />
+                <input
+                  value={form.commission}
+                  onChange={(e) => setForm((p) => ({ ...p, commission: e.target.value }))}
+                  className="w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm"
+                  placeholder="Komisi/Cashback"
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  value={form.buy_price}
+                  onChange={(e) => setForm((p) => ({ ...p, buy_price: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  placeholder="Harga modal"
+                />
+                <input
+                  value={form.sell_price}
+                  onChange={(e) => setForm((p) => ({ ...p, sell_price: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  placeholder="Harga jual"
+                />
+              </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <input
-              value={form.fee}
-              onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Fee"
-            />
-            <input
-              value={form.admin_fee}
-              onChange={(e) => setForm((p) => ({ ...p, admin_fee: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Admin fee"
-            />
-            <input
-              value={form.commission}
-              onChange={(e) => setForm((p) => ({ ...p, commission: e.target.value }))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              placeholder="Komisi"
-            />
-          </div>
+              <div className="grid grid-cols-3 gap-3">
+                <input
+                  value={form.fee}
+                  onChange={(e) => setForm((p) => ({ ...p, fee: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  placeholder="Fee"
+                />
+                <input
+                  value={form.admin_fee}
+                  onChange={(e) => setForm((p) => ({ ...p, admin_fee: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  placeholder="Admin fee"
+                />
+                <input
+                  value={form.commission}
+                  onChange={(e) => setForm((p) => ({ ...p, commission: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  placeholder="Komisi"
+                />
+              </div>
+            </>
+          )}
 
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">
-            Estimasi laba: Rp {estimatedProfit.toLocaleString('id-ID')}
+          <div className={`rounded-lg px-3 py-2 text-sm font-bold ${isTopupSaldoFee ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-emerald-100 bg-emerald-50 text-emerald-700'}`}>
+            {isTopupSaldoFee ? 'Estimasi beban: ' : 'Estimasi laba: '}Rp {estimatedProfit.toLocaleString('id-ID')}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1067,15 +1081,7 @@ export const DigitalTransactionRecorder = () => {
                           <CheckCircleIcon className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => updateStatus(row.id, 'failed')}
-                          disabled={row.is_voided}
-                          className={`p-1.5 rounded disabled:opacity-40 ${row.status === 'failed' ? 'bg-red-100 text-red-700' : 'text-gray-400 hover:text-red-700'}`}
-                          title="Tandai failed"
-                        >
-                          <ExclamationCircleIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => voidTransaction(row.id)}
+                          onClick={() => openVoidDialog(row.id)}
                           disabled={row.is_voided}
                           className="p-1.5 rounded text-gray-400 hover:text-amber-700 disabled:opacity-40"
                           title="Void transaksi"
@@ -1091,6 +1097,42 @@ export const DigitalTransactionRecorder = () => {
           </div>
         </section>
       </div>
+
+      {voidTargetId !== null && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl">
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h4 className="font-extrabold text-gray-800">Void Transaksi</h4>
+              <p className="text-xs text-gray-500 mt-1">Masukkan alasan void untuk transaksi ini.</p>
+            </div>
+            <div className="p-5 space-y-3">
+              <textarea
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                rows={4}
+                placeholder="Contoh: transaksi duplikat / salah input nomor"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={closeVoidDialog}
+                  disabled={voidSubmitting}
+                  className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => void confirmVoidTransaction()}
+                  disabled={voidSubmitting}
+                  className="px-4 py-2 rounded-lg bg-amber-600 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {voidSubmitting ? 'Memproses...' : 'Void Transaksi'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {(detailLoading || detailError || selectedDetail) && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">

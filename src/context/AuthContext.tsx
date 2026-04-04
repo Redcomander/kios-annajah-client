@@ -22,9 +22,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [isLoading, setIsLoading] = useState(true)
 
     useEffect(() => {
-        // Load from localStorage on mount
-        const savedToken = localStorage.getItem('token')
-        const savedUser = localStorage.getItem('user')
+        // Force fresh login on every app open; keep session only while app stays open.
+        localStorage.removeItem('token')
+        localStorage.removeItem('user')
+
+        const savedToken = sessionStorage.getItem('token')
+        const savedUser = sessionStorage.getItem('user')
         
         if (savedToken && savedUser) {
             setToken(savedToken)
@@ -33,16 +36,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false)
     }, [])
 
+    useEffect(() => {
+        const clearAuthOnClose = () => {
+            sessionStorage.removeItem('token')
+            sessionStorage.removeItem('user')
+            localStorage.removeItem('token')
+            localStorage.removeItem('user')
+        }
+
+        window.addEventListener('beforeunload', clearAuthOnClose)
+        return () => window.removeEventListener('beforeunload', clearAuthOnClose)
+    }, [])
+
     const login = (newToken: string, newUser: User) => {
         setToken(newToken)
         setUser(newUser)
-        localStorage.setItem('token', newToken)
-        localStorage.setItem('user', JSON.stringify(newUser))
+        sessionStorage.setItem('token', newToken)
+        sessionStorage.setItem('user', JSON.stringify(newUser))
     }
 
     const logout = () => {
         setToken(null)
         setUser(null)
+        sessionStorage.removeItem('token')
+        sessionStorage.removeItem('user')
         localStorage.removeItem('token')
         localStorage.removeItem('user')
     }
