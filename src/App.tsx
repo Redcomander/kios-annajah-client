@@ -10,6 +10,7 @@ import { ActivityLog } from './components/ActivityLog'
 import { DigitalTransactionRecorder } from './components/DigitalTransactionRecorder'
 import { HutangList } from './components/HutangList'
 import { OperationalNotes } from './components/OperationalNotes'
+import { ShoppingNotes } from './components/ShoppingNotes'
 import { 
   Squares2X2Icon, 
   ArchiveBoxIcon, 
@@ -22,6 +23,7 @@ import {
   DevicePhoneMobileIcon,
   BanknotesIcon,
   DocumentTextIcon,
+  ShoppingBagIcon,
 } from '@heroicons/react/24/solid'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LoginPage } from './pages/LoginPage'
@@ -333,6 +335,7 @@ const ProtectedApp = () => {
           <NavButton active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<ClockIcon className="h-6 w-6" />} label={MONITORING_MODE ? 'Transaksi' : 'Riwayat'} />
           {ENABLE_POS && <NavButton active={activeTab === 'hutang'} onClick={() => setActiveTab('hutang')} icon={<BanknotesIcon className="h-6 w-6" />} label="Hutang" badge={hutangOverdueCount} />}
           <NavButton active={activeTab === 'operational'} onClick={() => setActiveTab('operational')} icon={<DocumentTextIcon className="h-6 w-6" />} label="Operasional" />
+          <NavButton active={activeTab === 'shopping'} onClick={() => setActiveTab('shopping')} icon={<ShoppingBagIcon className="h-6 w-6" />} label="Belanja" />
           <NavButton active={activeTab === 'digital'} onClick={() => setActiveTab('digital')} icon={<DevicePhoneMobileIcon className="h-6 w-6" />} label="Pulsa/Data" />
           <NavButton active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={<ChartBarIcon className="h-6 w-6" />} label="Laporan" />
           
@@ -380,6 +383,8 @@ const ProtectedApp = () => {
                               ? 'Hutang / Bayar Nanti'
                             : activeTab === 'operational'
                               ? 'Catatan Operasional'
+                            : activeTab === 'shopping'
+                              ? 'Catatan Belanja'
                             : activeTab === 'reports'
                               ? (MONITORING_MODE ? 'Monitoring Laporan' : 'Laporan Penjualan')
                               : activeTab === 'activity'
@@ -439,6 +444,7 @@ const ProtectedApp = () => {
            {activeTab === 'digital' && <DigitalTransactionRecorder />}
            {activeTab === 'hutang' && <HutangList />}
            {activeTab === 'operational' && <OperationalNotes />}
+           {activeTab === 'shopping' && <ShoppingNotes />}
            {activeTab === 'reports' && <Reports />}
            {activeTab === 'users' && user?.role === 'admin' && <UserList />}
            {activeTab === 'activity' && user?.role === 'admin' && <ActivityLog />}

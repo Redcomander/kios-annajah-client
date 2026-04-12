@@ -3,13 +3,22 @@ import { buildApiUrl } from '../config/api'
 import { useAuth } from '../context/AuthContext'
 import { TrashIcon, PlusIcon } from '@heroicons/react/24/solid'
 
+type OperationalNotesMode = 'operational' | 'shopping'
+
+interface OperationalNotesProps {
+  mode?: OperationalNotesMode
+}
+
 interface OperationalNote {
   id: number
   entry_type: 'masuk' | 'keluar'
   category: string
+  is_shopping_note: boolean
   title: string
   note: string
   amount: number
+  gross_omzet: number
+  net_omzet: number
   entry_date: string
   created_by: string
   created_at: string
@@ -37,9 +46,11 @@ const formatDate = (value?: string) => {
 const formatCurrency = (value: number) => `Rp ${value.toLocaleString('id-ID')}`
 
 const today = () => new Date().toISOString().slice(0, 10)
+const SHOPPING_MARGIN_RATE = 0.125
 
-export const OperationalNotes = () => {
+export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps) => {
   const { token } = useAuth()
+  const isShoppingMode = mode === 'shopping'
 
   const [notes, setNotes] = useState<OperationalNote[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -50,6 +61,7 @@ export const OperationalNotes = () => {
   const [title, setTitle] = useState('')
   const [note, setNote] = useState('')
   const [amount, setAmount] = useState('')
+  const [grossOmzet, setGrossOmzet] = useState('')
   const [entryType, setEntryType] = useState<'masuk' | 'keluar'>('keluar')
   const [category, setCategory] = useState<(typeof operationalCategories)[number]>('Operasional Warung')
   const [entryDate, setEntryDate] = useState(today())
@@ -64,6 +76,7 @@ export const OperationalNotes = () => {
     const params = new URLSearchParams()
     if (dateFrom) params.set('date_from', dateFrom)
     if (dateTo) params.set('date_to', dateTo)
+    params.set('shopping_only', isShoppingMode ? 'true' : 'false')
 
     try {
       const res = await fetch(buildApiUrl(`/api/operational-notes${params.toString() ? `?${params.toString()}` : ''}`), {
@@ -82,19 +95,30 @@ export const OperationalNotes = () => {
     } finally {
       setIsLoading(false)
     }
-  }, [dateFrom, dateTo, token])
+  }, [dateFrom, dateTo, isShoppingMode, token])
 
   useEffect(() => {
     void fetchNotes()
   }, [fetchNotes])
 
+  const shoppingNetPreview = useMemo(() => {
+    const gross = Number(grossOmzet || 0)
+    if (Number.isNaN(gross) || gross <= 0) return 0
+    return gross - gross * SHOPPING_MARGIN_RATE
+  }, [grossOmzet])
+
   const totals = useMemo(() => {
     const masuk = notes.filter((n) => n.entry_type === 'masuk').reduce((sum, n) => sum + (n.amount || 0), 0)
     const keluar = notes.filter((n) => n.entry_type === 'keluar').reduce((sum, n) => sum + (n.amount || 0), 0)
+    const shoppingOmzetSaldo = notes.reduce((sum, n) => sum + (n.net_omzet || 0), 0)
+    const shoppingBelanja = notes.reduce((sum, n) => sum + (n.amount || 0), 0)
     return {
       masuk,
       keluar,
       saldo: masuk - keluar,
+      shoppingOmzetSaldo,
+      shoppingBelanja,
+      shoppingDifference: shoppingOmzetSaldo - shoppingBelanja,
     }
   }, [notes])
 
@@ -116,9 +140,11 @@ export const OperationalNotes = () => {
       const payload = {
         entry_type: entryType,
         category,
+        is_shopping_note: isShoppingMode,
         title: title.trim(),
         note: note.trim(),
         amount: amount ? Number(amount) : 0,
+        gross_omzet: isShoppingMode && grossOmzet ? Number(grossOmzet) : 0,
         entry_date: entryDate,
       }
 
@@ -140,6 +166,7 @@ export const OperationalNotes = () => {
       setTitle('')
       setNote('')
       setAmount('')
+      setGrossOmzet('')
       setEntryType('keluar')
       setCategory('Operasional Warung')
       setEntryDate(today())
@@ -179,21 +206,36 @@ export const OperationalNotes = () => {
       <div className="px-6 pt-6 pb-4 border-b border-gray-100 bg-white/80 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-extrabold text-gray-900">Catatan Operasional</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Simpan pengeluaran, kebutuhan, atau catatan operasional harian.</p>
+            <h2 className="text-2xl font-extrabold text-gray-900">{isShoppingMode ? 'Catatan Belanja' : 'Catatan Operasional'}</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {isShoppingMode
+                ? 'Catat belanja dan cocokkan langsung dengan Omzet Saldo setelah margin 12.5%.'
+                : 'Simpan pengeluaran, kebutuhan, atau catatan operasional harian.'}
+            </p>
           </div>
           <div className="text-right">
-            <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Ringkasan Filter</div>
-            <div className="text-sm font-bold text-emerald-700">Masuk: {formatCurrency(totals.masuk)}</div>
-            <div className="text-sm font-bold text-red-600">Keluar: {formatCurrency(totals.keluar)}</div>
-            <div className={`text-xl font-extrabold ${totals.saldo >= 0 ? 'text-indigo-700' : 'text-red-700'}`}>Saldo: {formatCurrency(totals.saldo)}</div>
+            {isShoppingMode ? (
+              <>
+                <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Belanja vs Omzet Saldo</div>
+                <div className="text-sm font-bold text-cyan-700">Omzet Saldo: {formatCurrency(totals.shoppingOmzetSaldo)}</div>
+                <div className="text-sm font-bold text-amber-700">Belanja: {formatCurrency(totals.shoppingBelanja)}</div>
+                <div className={`text-xl font-extrabold ${totals.shoppingDifference >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>Selisih: {formatCurrency(totals.shoppingDifference)}</div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-gray-500 font-semibold uppercase tracking-wide">Ringkasan Filter</div>
+                <div className="text-sm font-bold text-emerald-700">Masuk: {formatCurrency(totals.masuk)}</div>
+                <div className="text-sm font-bold text-red-600">Keluar: {formatCurrency(totals.keluar)}</div>
+                <div className={`text-xl font-extrabold ${totals.saldo >= 0 ? 'text-indigo-700' : 'text-red-700'}`}>Saldo: {formatCurrency(totals.saldo)}</div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-12 gap-4 p-4 h-full overflow-hidden">
         <div className="col-span-4 bg-white rounded-2xl border border-gray-200 p-4 overflow-y-auto">
-          <h3 className="text-sm font-extrabold text-gray-800 mb-3 uppercase tracking-wide">Tambah Catatan</h3>
+          <h3 className="text-sm font-extrabold text-gray-800 mb-3 uppercase tracking-wide">{isShoppingMode ? 'Tambah Catatan Belanja' : 'Tambah Catatan'}</h3>
           <form onSubmit={handleSave} className="space-y-3">
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Tanggal</label>
@@ -213,17 +255,19 @@ export const OperationalNotes = () => {
                 className="w-full border border-gray-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
             </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Jenis</label>
-              <select
-                value={entryType}
-                onChange={(e) => setEntryType(e.target.value as 'masuk' | 'keluar')}
-                className="w-full border border-gray-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none"
-              >
-                <option value="keluar">Uang Keluar</option>
-                <option value="masuk">Uang Masuk</option>
-              </select>
-            </div>
+            {!isShoppingMode && (
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Jenis</label>
+                <select
+                  value={entryType}
+                  onChange={(e) => setEntryType(e.target.value as 'masuk' | 'keluar')}
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none"
+                >
+                  <option value="keluar">Uang Keluar</option>
+                  <option value="masuk">Uang Masuk</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Kategori</label>
               <select
@@ -237,7 +281,7 @@ export const OperationalNotes = () => {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nominal (opsional)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">{isShoppingMode ? 'Nominal Belanja' : 'Nominal (opsional)'}</label>
               <input
                 type="number"
                 min={0}
@@ -247,6 +291,29 @@ export const OperationalNotes = () => {
                 className="w-full border border-gray-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-emerald-500 outline-none"
               />
             </div>
+            {isShoppingMode && (
+              <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-3 space-y-3">
+                <div>
+                  <label className="block text-sm font-bold text-cyan-900 mb-1">Omzet Kotor</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={grossOmzet}
+                    onChange={(e) => setGrossOmzet(e.target.value)}
+                    placeholder="0"
+                    className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-cyan-500 outline-none"
+                  />
+                </div>
+                <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2.5">
+                  <div className="text-xs font-bold uppercase tracking-wide text-cyan-700">Omzet Saldo (-12.5%)</div>
+                  <div className="mt-1 text-lg font-extrabold text-cyan-900">{formatCurrency(shoppingNetPreview)}</div>
+                </div>
+                <div className={`rounded-xl border px-3 py-2.5 ${shoppingNetPreview - Number(amount || 0) >= 0 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                  <div className="text-xs font-bold uppercase tracking-wide">Selisih dengan Nominal</div>
+                  <div className="mt-1 text-lg font-extrabold">{formatCurrency(shoppingNetPreview - Number(amount || 0))}</div>
+                </div>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-bold text-gray-700 mb-1">Catatan</label>
               <textarea
@@ -314,15 +381,17 @@ export const OperationalNotes = () => {
             ) : notes.length === 0 ? (
               <div className="h-40 flex items-center justify-center text-gray-400">Belum ada catatan operasional.</div>
             ) : (
-              <table className="w-full text-sm min-w-[760px]">
+              <table className="w-full text-sm min-w-[1100px]">
                 <thead className="bg-gray-50 text-xs uppercase text-gray-500 sticky top-0">
                   <tr>
                     <th className="px-4 py-3 text-left">Tanggal</th>
-                    <th className="px-4 py-3 text-left">Jenis</th>
+                    {!isShoppingMode && <th className="px-4 py-3 text-left">Jenis</th>}
                     <th className="px-4 py-3 text-left">Kategori</th>
                     <th className="px-4 py-3 text-left">Judul</th>
                     <th className="px-4 py-3 text-left">Catatan</th>
                     <th className="px-4 py-3 text-right">Nominal</th>
+                    {isShoppingMode && <th className="px-4 py-3 text-right">Omzet Saldo</th>}
+                    {isShoppingMode && <th className="px-4 py-3 text-right">Selisih</th>}
                     <th className="px-4 py-3 text-center">Aksi</th>
                   </tr>
                 </thead>
@@ -330,17 +399,25 @@ export const OperationalNotes = () => {
                   {notes.map((n) => (
                     <tr key={n.id} className="hover:bg-emerald-50/40">
                       <td className="px-4 py-3 whitespace-nowrap">{formatDate(n.entry_date)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`text-xs px-2 py-1 rounded-full font-bold ${n.entry_type === 'masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
-                          {n.entry_type === 'masuk' ? 'UANG MASUK' : 'UANG KELUAR'}
-                        </span>
-                      </td>
+                      {!isShoppingMode && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span className={`text-xs px-2 py-1 rounded-full font-bold ${n.entry_type === 'masuk' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                            {n.entry_type === 'masuk' ? 'UANG MASUK' : 'UANG KELUAR'}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{normalizeCategoryLabel(n.category)}</td>
                       <td className="px-4 py-3 font-semibold text-gray-800">{n.title}</td>
                       <td className="px-4 py-3 text-gray-600">{n.note}</td>
                       <td className={`px-4 py-3 text-right font-bold ${n.entry_type === 'masuk' ? 'text-emerald-700' : 'text-red-700'}`}>
                         {n.entry_type === 'masuk' ? '+' : '-'}{formatCurrency(n.amount || 0)}
                       </td>
+                      {isShoppingMode && <td className="px-4 py-3 text-right font-bold text-cyan-700">{formatCurrency(n.net_omzet || 0)}</td>}
+                      {isShoppingMode && (
+                        <td className={`px-4 py-3 text-right font-bold ${(n.net_omzet || 0) - (n.amount || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                          {formatCurrency((n.net_omzet || 0) - (n.amount || 0))}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={() => void handleDelete(n.id)}
