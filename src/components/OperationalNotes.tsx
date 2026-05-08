@@ -47,6 +47,20 @@ const formatCurrency = (value: number) => `Rp ${value.toLocaleString('id-ID')}`
 
 const today = () => new Date().toISOString().slice(0, 10)
 const SHOPPING_MARGIN_RATE = 0.125
+const monthOptions = [
+  { value: '01', label: 'Januari' },
+  { value: '02', label: 'Februari' },
+  { value: '03', label: 'Maret' },
+  { value: '04', label: 'April' },
+  { value: '05', label: 'Mei' },
+  { value: '06', label: 'Juni' },
+  { value: '07', label: 'Juli' },
+  { value: '08', label: 'Agustus' },
+  { value: '09', label: 'September' },
+  { value: '10', label: 'Oktober' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'Desember' },
+] as const
 
 export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps) => {
   const { token } = useAuth()
@@ -65,9 +79,105 @@ export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps
   const [entryType, setEntryType] = useState<'masuk' | 'keluar'>('keluar')
   const [category, setCategory] = useState<(typeof operationalCategories)[number]>('Operasional Warung')
   const [entryDate, setEntryDate] = useState(today())
+  const [omzetMode, setOmzetMode] = useState<'daily' | 'range' | 'monthly'>('daily')
+  const [rangeFrom, setRangeFrom] = useState(today())
+  const [rangeTo, setRangeTo] = useState(today())
+  const [selectedMonth, setSelectedMonth] = useState(() => String(new Date().getMonth() + 1).padStart(2, '0'))
+  const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()))
+  const [isFetchingOmzet, setIsFetchingOmzet] = useState(false)
+  const [omzetFetchedDate, setOmzetFetchedDate] = useState('')
+  const [omzetRefreshKey, setOmzetRefreshKey] = useState(0)
 
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+
+  const monthLabel = useMemo(() => {
+    const found = monthOptions.find((m) => m.value === selectedMonth)
+    return found?.label || selectedMonth
+  }, [selectedMonth])
+
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    return Array.from({ length: 9 }, (_, i) => String(currentYear - 4 + i))
+  }, [])
+
+  // Auto-fetch omzet from laporan based on selected monitoring mode (shopping mode only)
+  useEffect(() => {
+    if (!isShoppingMode || !token) return
+    let cancelled = false
+
+    const applyOmzet = (total: number, label: string) => {
+      if (cancelled) return
+      setGrossOmzet(total > 0 ? String(total) : '')
+      setOmzetFetchedDate(total > 0 ? label : '')
+    }
+
+    const run = async () => {
+      if (omzetMode === 'daily' && !entryDate) {
+        applyOmzet(0, '')
+        return
+      }
+      if (omzetMode === 'range' && (!rangeFrom || !rangeTo)) {
+        applyOmzet(0, '')
+        return
+      }
+
+      setIsFetchingOmzet(true)
+      try {
+        if (omzetMode === 'daily') {
+          const res = await fetch(buildApiUrl(`/api/reports/daily-summary?date=${entryDate}`), {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          const data: { total?: number } = await res.json()
+          applyOmzet(Number(data?.total || 0), entryDate)
+          return
+        }
+
+        if (omzetMode === 'monthly') {
+          const monthKey = `${selectedYear}-${selectedMonth}`
+          const res = await fetch(buildApiUrl('/api/reports/chart?period=monthly'), {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          const rows: Array<{ date?: string; total?: number }> = await res.json()
+          const target = Array.isArray(rows) ? rows.find((row) => row?.date === monthKey) : null
+          applyOmzet(Number(target?.total || 0), `${monthLabel} ${selectedYear}`)
+          return
+        }
+
+        let start = rangeFrom
+        let end = rangeTo
+        if (start > end) {
+          start = rangeTo
+          end = rangeFrom
+        }
+
+        const res = await fetch(buildApiUrl('/api/reports/chart?period=daily'), {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const rows: Array<{ date?: string; total?: number }> = await res.json()
+        const total = Array.isArray(rows)
+          ? rows.reduce((sum, row) => {
+            const date = String(row?.date || '')
+            if (date >= start && date <= end) return sum + Number(row?.total || 0)
+            return sum
+          }, 0)
+          : 0
+        applyOmzet(total, `${start} s/d ${end}`)
+      } catch {
+        if (!cancelled) {
+          setGrossOmzet('')
+          setOmzetFetchedDate('')
+        }
+      } finally {
+        if (!cancelled) setIsFetchingOmzet(false)
+      }
+    }
+
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [isShoppingMode, token, omzetMode, entryDate, rangeFrom, rangeTo, selectedMonth, selectedYear, monthLabel, omzetRefreshKey])
 
   const fetchNotes = useCallback(async () => {
     setIsLoading(true)
@@ -106,6 +216,8 @@ export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps
     if (Number.isNaN(gross) || gross <= 0) return 0
     return gross - gross * SHOPPING_MARGIN_RATE
   }, [grossOmzet])
+
+  const isOmzetAutoLocked = !isFetchingOmzet && omzetFetchedDate !== '' && grossOmzet !== ''
 
   const totals = useMemo(() => {
     const masuk = notes.filter((n) => n.entry_type === 'masuk').reduce((sum, n) => sum + (n.amount || 0), 0)
@@ -167,9 +279,12 @@ export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps
       setNote('')
       setAmount('')
       setGrossOmzet('')
+      setOmzetFetchedDate('')
       setEntryType('keluar')
       setCategory('Operasional Warung')
-      setEntryDate(today())
+      const newDate = today()
+      if (entryDate === newDate) setOmzetRefreshKey(k => k + 1)
+      setEntryDate(newDate)
       await fetchNotes()
     } catch {
       setError('Error koneksi saat menyimpan')
@@ -194,6 +309,7 @@ export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps
         return
       }
       await fetchNotes()
+      if (isShoppingMode) setOmzetRefreshKey(k => k + 1)
     } catch {
       setError('Error koneksi saat menghapus')
     } finally {
@@ -293,15 +409,100 @@ export const OperationalNotes = ({ mode = 'operational' }: OperationalNotesProps
             </div>
             {isShoppingMode && (
               <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-3 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wide text-cyan-700 mb-1">Mode Omzet</label>
+                    <select
+                      value={omzetMode}
+                      onChange={(e) => setOmzetMode(e.target.value as 'daily' | 'range' | 'monthly')}
+                      className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+                    >
+                      <option value="daily">Harian</option>
+                      <option value="range">Rentang Tanggal</option>
+                      <option value="monthly">Bulanan</option>
+                    </select>
+                  </div>
+
+                  {omzetMode === 'range' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-cyan-700 mb-1">Dari</label>
+                        <input
+                          type="date"
+                          value={rangeFrom}
+                          onChange={(e) => setRangeFrom(e.target.value)}
+                          className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-cyan-700 mb-1">Sampai</label>
+                        <input
+                          type="date"
+                          value={rangeTo}
+                          onChange={(e) => setRangeTo(e.target.value)}
+                          className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {omzetMode === 'monthly' && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-cyan-700 mb-1">Bulan</label>
+                        <select
+                          value={selectedMonth}
+                          onChange={(e) => setSelectedMonth(e.target.value)}
+                          className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+                        >
+                          {monthOptions.map((month) => (
+                            <option key={month.value} value={month.value}>{month.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wide text-cyan-700 mb-1">Tahun</label>
+                        <select
+                          value={selectedYear}
+                          onChange={(e) => setSelectedYear(e.target.value)}
+                          className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-cyan-500"
+                        >
+                          {yearOptions.map((year) => (
+                            <option key={year} value={year}>{year}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {omzetMode === 'daily' && (
+                  <div className="text-xs text-cyan-700 font-semibold">Monitoring memakai Tanggal Catatan yang dipilih di atas.</div>
+                )}
+
                 <div>
-                  <label className="block text-sm font-bold text-cyan-900 mb-1">Omzet Kotor</label>
+                  <label className="block text-sm font-bold text-cyan-900 mb-1">
+                    Omzet Periode
+                    {isFetchingOmzet && (
+                      <span className="ml-2 text-xs font-normal text-cyan-500">Memuat dari laporan...</span>
+                    )}
+                    {!isFetchingOmzet && omzetFetchedDate !== '' && grossOmzet !== '' && (
+                      <span className="ml-2 text-xs font-normal text-cyan-600">✓ dari laporan {omzetFetchedDate}</span>
+                    )}
+                  </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     min={0}
-                    value={grossOmzet}
-                    onChange={(e) => setGrossOmzet(e.target.value)}
+                    disabled={isOmzetAutoLocked}
+                    value={isOmzetAutoLocked ? formatCurrency(Number(grossOmzet)) : grossOmzet}
+                    onChange={(e) => { setGrossOmzet(e.target.value.replace(/[^0-9]/g, '')); setOmzetFetchedDate('') }}
                     placeholder="0"
-                    className="w-full border border-cyan-200 bg-white rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-cyan-500 outline-none"
+                    className={`w-full border rounded-xl px-3 py-2.5 outline-none transition-colors ${
+                      isOmzetAutoLocked
+                        ? 'border-cyan-300 bg-cyan-50 text-cyan-900 font-semibold cursor-not-allowed'
+                        : 'border-cyan-200 bg-white focus:ring-2 focus:ring-cyan-500'
+                    }`}
                   />
                 </div>
                 <div className="rounded-xl border border-cyan-200 bg-white px-3 py-2.5">
